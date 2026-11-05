@@ -88,6 +88,17 @@ price is retained with the entry. Managers see reports only for their assigned
 active stations; DSMS staff see only their own report history. Approval and
 correction workflows are implemented in a later stage.
 
+DSMS staff can record cash by Indian note and coin denominations, UPI, debit
+and credit cards, credit sales, advances applied, OTP settlements, and
+expenses against an editable duty report. The Owner configures each station's
+reconciliation policy, including whether advances and OTP count toward
+settlement and the permitted variance tolerance. Expected collections equal
+duty sales less credit sales; actual collections include counted cash and
+eligible tenders. Expenses are shown separately and do not conceal a shortage.
+Owners and assigned Managers can append signed, immutable, reasoned
+adjustments to submitted reports; the authorization and adjustment history is
+visible on the report. Credit repayments are not recorded as sales.
+
 ## Checks and tests
 
 ```powershell
@@ -120,11 +131,15 @@ pytest
   effective-price lookup, and historical price snapshots.
 - Station-specific lubricant catalogs, stock and price management, duty-report
   sales snapshots, and stock deduction on report submission.
+- Duty-report payment collections with cash denominations, distinct credit
+  sales, configurable reconciliation, variance status, and immutable authorized
+  adjustments.
 - Tests for roles, approval, authentication, authorization, password reset,
-  station management, duty-report workflows, and station-level isolation.
+  station management, duty-report workflows, station-level isolation, cash
+  reconciliation, and adjustment authorization.
 
-Fuel inventory movements, report approvals, payment reconciliation, and payroll
-have not yet been implemented. Existing staff
+Fuel inventory movements, report approvals, customer-level credit management
+and repayments, and payroll have not yet been implemented. Existing staff
 accounts from before owner-scoped registration may need their
 requesting/approving Owner linked by a system administrator before an employee
 profile can be created.

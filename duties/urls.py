@@ -13,6 +13,16 @@ urlpatterns = [
         views.report_fuel_entries,
         name="report-fuel-entries",
     ),
+    path(
+        "<int:report_id>/collections/",
+        views.report_payment_collection,
+        name="report-payment-collection",
+    ),
+    path(
+        "<int:report_id>/adjustments/new/",
+        views.reconciliation_adjustment_create,
+        name="reconciliation-adjustment-create",
+    ),
     path("<int:report_id>/", views.report_detail, name="report-detail"),
     path("<int:report_id>/edit/", views.report_update, name="report-update"),
     path("<int:report_id>/submit/", views.report_submit, name="report-submit"),
@@ -55,6 +65,11 @@ urlpatterns = [
         "stations/<int:station_id>/lubricants/<int:lubricant_id>/status/",
         views.lubricant_toggle_status,
         name="lubricant-toggle-status",
+    ),
+    path(
+        "stations/<int:station_id>/reconciliation/",
+        views.reconciliation_settings_update,
+        name="reconciliation-settings",
     ),
     path(
         "<int:report_id>/lubricant-entries/",

@@ -106,6 +106,75 @@
         <p class="h3 mb-0">₹{{ total_duty_sales|floatformat:2 }}</p>
         <p class="text-secondary mb-0">Fuel ₹{{ total_fuel_sales|floatformat:2 }} + lubricants ₹{{ total_lubricant_sales|floatformat:2 }}</p>
     </section>
+    <hr>
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Payment reconciliation</p>
+            <h2 class="h4">Collections and cash-up</h2>
+        </div>
+        {% if can_edit_collection %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:report-payment-collection' report.pk %}">{% if collection %}Edit collections{% else %}Record collections{% endif %}</a>
+        {% endif %}
+        {% if can_authorize_adjustments %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:reconciliation-adjustment-create' report.pk %}">Authorize adjustment</a>
+        {% endif %}
+    </div>
+    {% if collection %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <tbody>
+                    <tr><th>Counted cash</th><td>₹{{ collection.cash_total|floatformat:2 }}</td></tr>
+                    <tr><th>UPI</th><td>₹{{ collection.upi|floatformat:2 }}</td></tr>
+                    <tr><th>Debit card</th><td>₹{{ collection.debit_card|floatformat:2 }}</td></tr>
+                    <tr><th>Credit card</th><td>₹{{ collection.credit_card|floatformat:2 }}</td></tr>
+                    <tr><th>Credit sales (not collected)</th><td>₹{{ collection.credit_sales|floatformat:2 }}</td></tr>
+                    <tr><th>Advances applied</th><td>₹{{ collection.advances|floatformat:2 }}{% if reconciliation_settings and not reconciliation_settings.include_advances %} <span class="text-secondary">(excluded by station policy)</span>{% endif %}</td></tr>
+                    <tr><th>OTP transactions</th><td>₹{{ collection.otp|floatformat:2 }}{% if reconciliation_settings and not reconciliation_settings.include_otp %} <span class="text-secondary">(excluded by station policy)</span>{% endif %}</td></tr>
+                    <tr><th>Expenses recorded separately</th><td>₹{{ collection.expenses|floatformat:2 }}{% if collection.expense_notes %}<span class="table-secondary">{{ collection.expense_notes }}</span>{% endif %}</td></tr>
+                </tbody>
+                <tfoot>
+                    <tr><th>Expected collections (sales less credit sales)</th><th>₹{{ reconciliation.expected_collections|floatformat:2 }}</th></tr>
+                    <tr><th>Actual collections</th><th>₹{{ reconciliation.actual_collections|floatformat:2 }}</th></tr>
+                    <tr><th>Authorized adjustments</th><th>₹{{ reconciliation.authorized_adjustments|floatformat:2 }}</th></tr>
+                    <tr>
+                        <th>Variance</th>
+                        <th>
+                            ₹{{ reconciliation.variance|floatformat:2 }}
+                            <span class="status-pill {% if reconciliation.status == 'matched' %}status-active{% elif reconciliation.status == 'shortage' %}status-suspended{% else %}role-pill{% endif %}">{{ reconciliation.status|title }}</span>
+                        </th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <details class="mb-3">
+            <summary>Cash denomination counts</summary>
+            <ul class="mt-2 mb-0">
+                {% for item in collection.cash_denominations.all %}
+                    <li>{{ item.get_denomination_display }} × {{ item.count }} = ₹{{ item.amount|floatformat:2 }}</li>
+                {% endfor %}
+            </ul>
+        </details>
+    {% else %}
+        <p class="text-secondary">Collection details have not been recorded. Reconciliation is not available yet.</p>
+    {% endif %}
+    {% if adjustments %}
+        <h3 class="h6 mt-3">Authorized adjustment history</h3>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle staff-table">
+                <thead><tr><th>Authorized</th><th>By</th><th>Reason</th><th class="text-end">Amount</th></tr></thead>
+                <tbody>
+                    {% for adjustment in adjustments %}
+                        <tr>
+                            <td>{{ adjustment.authorized_at|date:"j M Y, g:i A" }}</td>
+                            <td>{{ adjustment.authorized_by.get_full_name|default:adjustment.authorized_by.username }}</td>
+                            <td>{{ adjustment.reason }}</td>
+                            <td class="text-end">₹{{ adjustment.amount|floatformat:2 }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
     <div class="form-actions">
         <a class="btn btn-outline-secondary" href="{% url 'duties:report-list' %}">Back to reports</a>
         {% if can_edit %}

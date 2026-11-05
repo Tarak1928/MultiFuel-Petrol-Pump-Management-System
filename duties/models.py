@@ -4,10 +4,10 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
-from django.db.models import F, Q
+from django.db.models import F, Q, Sum
 
 from accounts.models import User
-from employees.models import Employee
+from employees.models import Employee, ManagerAssignment
 from fuel.models import FuelPrice, Nozzle
 from stations.models import Station
 
@@ -449,3 +449,331 @@ class DutyLubricantEntry(models.Model):
 
     def __str__(self):
         return f"{self.report} · {self.lubricant.name}"
+
+
+class ReconciliationSettings(models.Model):
+    station = models.OneToOneField(
+        Station,
+        on_delete=models.PROTECT,
+        related_name="reconciliation_settings",
+    )
+    include_advances = models.BooleanField(
+        default=True,
+        help_text="Count advances applied to this shift as settlement for its sales.",
+    )
+    include_otp = models.BooleanField(
+        default=True,
+        help_text="Count OTP transactions as settlement for this shift's sales.",
+    )
+    tolerance_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Maximum absolute variance treated as matched.",
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(tolerance_amount__gte=0),
+                name="recon_tolerance_nonneg",
+            ),
+        ]
+
+    def clean(self):
+        if self.tolerance_amount is not None and self.tolerance_amount < 0:
+            raise ValidationError(
+                {"tolerance_amount": "Reconciliation tolerance cannot be negative."}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Reconciliation settings — {self.station}"
+
+
+class PaymentCollection(models.Model):
+    class ReconciliationStatus(models.TextChoices):
+        MATCHED = "matched", "Matched"
+        SHORTAGE = "shortage", "Shortage"
+        EXCESS = "excess", "Excess"
+
+    report = models.OneToOneField(
+        DutyReport,
+        on_delete=models.CASCADE,
+        related_name="payment_collection",
+    )
+    upi = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    debit_card = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+    credit_card = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+    credit_sales = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+    advances = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+    otp = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    expenses = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+    expense_notes = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(upi__gte=0)
+                    & Q(debit_card__gte=0)
+                    & Q(credit_card__gte=0)
+                    & Q(credit_sales__gte=0)
+                    & Q(advances__gte=0)
+                    & Q(otp__gte=0)
+                    & Q(expenses__gte=0)
+                ),
+                name="pay_collection_nonneg",
+            ),
+        ]
+
+    def clean(self):
+        errors = {}
+        if self.report_id:
+            if self.report.status not in (
+                DutyReport.Status.DRAFT,
+                DutyReport.Status.CORRECTION_REQUESTED,
+            ):
+                errors["report"] = "Collections are locked after report submission."
+            if (
+                self.credit_sales is not None
+                and self.credit_sales > self.duty_sales_total
+            ):
+                errors["credit_sales"] = "Credit sales cannot exceed total duty sales."
+        if errors:
+            raise ValidationError(errors)
+
+    @property
+    def cash_total(self):
+        return sum(
+            (
+                Decimal(denomination) * count
+                for denomination, count in self.cash_denominations.values_list(
+                    "denomination",
+                    "count",
+                )
+            ),
+            start=Decimal("0.00"),
+        ).quantize(Decimal("0.01"))
+
+    @property
+    def duty_sales_total(self):
+        fuel_total = (
+            self.report.fuel_entries.aggregate(total=Sum("sale_amount"))["total"]
+            or Decimal("0.00")
+        )
+        lubricant_total = (
+            self.report.lubricant_entries.aggregate(total=Sum("sale_amount"))["total"]
+            or Decimal("0.00")
+        )
+        return fuel_total + lubricant_total
+
+    def reconciliation_summary(self, settings=None):
+        if settings is None:
+            settings = ReconciliationSettings.objects.filter(
+                station_id=self.report.station_id
+            ).first()
+        counted_cash = self.cash_total
+        expected = self.duty_sales_total - self.credit_sales
+        actual = (
+            counted_cash
+            + self.upi
+            + self.debit_card
+            + self.credit_card
+            + (self.advances if settings is None or settings.include_advances else 0)
+            + (self.otp if settings is None or settings.include_otp else 0)
+        )
+        adjustments = (
+            self.report.reconciliation_adjustments.aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+        variance = actual + adjustments - expected
+        tolerance = (
+            settings.tolerance_amount
+            if settings is not None
+            else Decimal("0.00")
+        )
+        if abs(variance) <= tolerance:
+            status = self.ReconciliationStatus.MATCHED
+        elif variance < 0:
+            status = self.ReconciliationStatus.SHORTAGE
+        else:
+            status = self.ReconciliationStatus.EXCESS
+        return {
+            "expected_collections": expected,
+            "actual_collections": actual,
+            "authorized_adjustments": adjustments,
+            "variance": variance,
+            "status": status,
+        }
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Collections — {self.report}"
+
+
+class CashDenomination(models.Model):
+    DENOMINATION_CHOICES = (
+        (500, "₹500"),
+        (200, "₹200"),
+        (100, "₹100"),
+        (50, "₹50"),
+        (20, "₹20"),
+        (10, "₹10"),
+        (5, "₹5 coin"),
+        (2, "₹2 coin"),
+        (1, "₹1 coin"),
+    )
+
+    collection = models.ForeignKey(
+        PaymentCollection,
+        on_delete=models.CASCADE,
+        related_name="cash_denominations",
+    )
+    denomination = models.PositiveSmallIntegerField(choices=DENOMINATION_CHOICES)
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-denomination"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("collection", "denomination"),
+                name="cash_denomination_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(count__gte=0),
+                name="pay_cash_count_nonneg",
+            ),
+        ]
+
+    def clean(self):
+        if self.collection_id and self.collection.report.status not in (
+            DutyReport.Status.DRAFT,
+            DutyReport.Status.CORRECTION_REQUESTED,
+        ):
+            raise ValidationError(
+                {"collection": "Cash denominations are locked after report submission."}
+            )
+
+    @property
+    def amount(self):
+        return Decimal(self.denomination * self.count).quantize(Decimal("0.01"))
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.get_denomination_display()} × {self.count}"
+
+
+class ReconciliationAdjustment(models.Model):
+    report = models.ForeignKey(
+        DutyReport,
+        on_delete=models.CASCADE,
+        related_name="reconciliation_adjustments",
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Use a positive amount for an approved increase or negative for a decrease.",
+    )
+    reason = models.CharField(max_length=500)
+    authorized_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="reconciliation_adjustments",
+    )
+    authorized_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-authorized_at", "-pk"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(amount=0),
+                name="recon_adjustment_nonzero",
+            ),
+        ]
+
+    def clean(self):
+        errors = {}
+        if self.report_id and self.report.status not in (
+            DutyReport.Status.SUBMITTED,
+            DutyReport.Status.APPROVED,
+        ):
+            errors["report"] = "Adjustments require a submitted or approved duty report."
+        if self.authorized_by_id:
+            user = self.authorized_by
+            if not user.is_active or not user.is_approved:
+                errors["authorized_by"] = "Only active, approved staff can authorize adjustments."
+            elif not self.report_id:
+                errors["report"] = "Choose a report for this adjustment."
+            elif user.role == User.Role.OWNER:
+                if user.pk != self.report.station.owner_id:
+                    errors["authorized_by"] = "Only the station Owner can authorize this adjustment."
+            elif user.role == User.Role.MANAGER:
+                assigned = ManagerAssignment.objects.filter(
+                    employee__user=user,
+                    employee__is_active=True,
+                    station_id=self.report.station_id,
+                    station__is_active=True,
+                ).exists()
+                if not assigned:
+                    errors["authorized_by"] = (
+                        "Only a Manager assigned to the station can authorize this adjustment."
+                    )
+            else:
+                errors["authorized_by"] = "Only the Owner or an assigned Manager can authorize adjustments."
+        if not (self.reason or "").strip():
+            errors["reason"] = "Provide a reason for the adjustment."
+        if self.amount == 0:
+            errors["amount"] = "An adjustment must be non-zero."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = type(self).objects.filter(pk=self.pk).values(
+                "report_id",
+                "amount",
+                "reason",
+                "authorized_by_id",
+            ).first()
+            if previous and any(
+                previous[field] != getattr(self, field)
+                for field in ("report_id", "amount", "reason", "authorized_by_id")
+            ):
+                raise ValidationError("Authorized reconciliation adjustments are immutable.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.amount} adjustment — {self.report}"

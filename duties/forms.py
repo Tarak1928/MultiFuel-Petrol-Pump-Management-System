@@ -3,15 +3,20 @@ import uuid
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
+from django.db.models import Sum
 from django.forms import BaseInlineFormSet, inlineformset_factory
 
 from fuel.models import Nozzle
 
 from .models import (
+    CashDenomination,
     DutyFuelEntry,
     DutyLubricantEntry,
     DutyReport,
     Lubricant,
+    PaymentCollection,
+    ReconciliationAdjustment,
+    ReconciliationSettings,
     Shift,
 )
 from .pricing import effective_price_for_report
@@ -418,3 +423,157 @@ DutyLubricantEntryFormSet = inlineformset_factory(
     max_num=50,
     validate_max=True,
 )
+
+
+class PaymentCollectionForm(forms.ModelForm):
+    denomination_fields = {
+        500: "cash_500_count",
+        200: "cash_200_count",
+        100: "cash_100_count",
+        50: "cash_50_count",
+        20: "cash_20_count",
+        10: "cash_10_count",
+        5: "cash_5_coin_count",
+        2: "cash_2_coin_count",
+        1: "cash_1_coin_count",
+    }
+
+    cash_500_count = forms.IntegerField(min_value=0, required=False, initial=0)
+    cash_200_count = forms.IntegerField(min_value=0, required=False, initial=0)
+    cash_100_count = forms.IntegerField(min_value=0, required=False, initial=0)
+    cash_50_count = forms.IntegerField(min_value=0, required=False, initial=0)
+    cash_20_count = forms.IntegerField(min_value=0, required=False, initial=0)
+    cash_10_count = forms.IntegerField(min_value=0, required=False, initial=0)
+    cash_5_coin_count = forms.IntegerField(min_value=0, required=False, initial=0)
+    cash_2_coin_count = forms.IntegerField(min_value=0, required=False, initial=0)
+    cash_1_coin_count = forms.IntegerField(min_value=0, required=False, initial=0)
+
+    class Meta:
+        model = PaymentCollection
+        fields = (
+            "upi",
+            "debit_card",
+            "credit_card",
+            "credit_sales",
+            "advances",
+            "otp",
+            "expenses",
+            "expense_notes",
+        )
+        widgets = {
+            "upi": forms.NumberInput(
+                attrs={"class": "form-control", "min": "0", "step": "0.01"}
+            ),
+            "debit_card": forms.NumberInput(
+                attrs={"class": "form-control", "min": "0", "step": "0.01"}
+            ),
+            "credit_card": forms.NumberInput(
+                attrs={"class": "form-control", "min": "0", "step": "0.01"}
+            ),
+            "credit_sales": forms.NumberInput(
+                attrs={"class": "form-control", "min": "0", "step": "0.01"}
+            ),
+            "advances": forms.NumberInput(
+                attrs={"class": "form-control", "min": "0", "step": "0.01"}
+            ),
+            "otp": forms.NumberInput(
+                attrs={"class": "form-control", "min": "0", "step": "0.01"}
+            ),
+            "expenses": forms.NumberInput(
+                attrs={"class": "form-control", "min": "0", "step": "0.01"}
+            ),
+            "expense_notes": forms.TextInput(
+                attrs={"class": "form-control", "maxlength": "500"}
+            ),
+        }
+
+    def __init__(self, report, *args, **kwargs):
+        instance = kwargs.get("instance")
+        if instance is None:
+            kwargs["instance"] = PaymentCollection(report=report)
+        else:
+            instance.report = report
+        super().__init__(*args, **kwargs)
+        self.report = report
+        denominations = {}
+        if self.instance.pk:
+            denominations = {
+                item.denomination: item.count
+                for item in self.instance.cash_denominations.all()
+            }
+        for denomination, field_name in self.denomination_fields.items():
+            self.fields[field_name].initial = denominations.get(denomination, 0)
+            self.fields[field_name].widget.attrs.update(
+                {"class": "form-control", "min": "0", "step": "1"}
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        credit_sales = cleaned_data.get("credit_sales")
+        if credit_sales is not None:
+            sales_total = (
+                self.report.fuel_entries.aggregate(total=Sum("sale_amount"))["total"]
+                or 0
+            ) + (
+                self.report.lubricant_entries.aggregate(total=Sum("sale_amount"))["total"]
+                or 0
+            )
+            if credit_sales > sales_total:
+                self.add_error("credit_sales", "Credit sales cannot exceed total duty sales.")
+        return cleaned_data
+
+    def save(self, commit=True):
+        collection = super().save(commit=False)
+        collection.report = self.report
+        if commit:
+            collection.save()
+            for denomination, field_name in self.denomination_fields.items():
+                CashDenomination.objects.update_or_create(
+                    collection=collection,
+                    denomination=denomination,
+                    defaults={"count": self.cleaned_data[field_name] or 0},
+                )
+        return collection
+
+
+class ReconciliationSettingsForm(forms.ModelForm):
+    class Meta:
+        model = ReconciliationSettings
+        fields = ("include_advances", "include_otp", "tolerance_amount")
+        widgets = {
+            "include_advances": forms.CheckboxInput(
+                attrs={"class": "form-check-input"}
+            ),
+            "include_otp": forms.CheckboxInput(
+                attrs={"class": "form-check-input"}
+            ),
+            "tolerance_amount": forms.NumberInput(
+                attrs={"class": "form-control", "min": "0", "step": "0.01"}
+            ),
+        }
+
+
+class ReconciliationAdjustmentForm(forms.ModelForm):
+    class Meta:
+        model = ReconciliationAdjustment
+        fields = ("amount", "reason")
+        widgets = {
+            "amount": forms.NumberInput(
+                attrs={"class": "form-control", "step": "0.01"}
+            ),
+            "reason": forms.TextInput(
+                attrs={"class": "form-control", "maxlength": "500"}
+            ),
+        }
+
+    def __init__(self, report, user, *args, **kwargs):
+        instance = kwargs.get("instance")
+        if instance is None:
+            kwargs["instance"] = ReconciliationAdjustment(
+                report=report,
+                authorized_by=user,
+            )
+        else:
+            instance.report = report
+            instance.authorized_by = user
+        super().__init__(*args, **kwargs)

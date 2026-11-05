@@ -2,6 +2,7 @@ import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -11,7 +12,17 @@ from employees.models import Employee, ManagerAssignment
 from fuel.models import FuelPrice, FuelType, Nozzle, Tank
 from stations.models import Station
 
-from .models import DutyFuelEntry, DutyLubricantEntry, DutyReport, Lubricant, Shift
+from .models import (
+    CashDenomination,
+    DutyFuelEntry,
+    DutyLubricantEntry,
+    DutyReport,
+    Lubricant,
+    PaymentCollection,
+    ReconciliationAdjustment,
+    ReconciliationSettings,
+    Shift,
+)
 
 
 class ShiftAndDutyReportTests(TestCase):
@@ -197,6 +208,23 @@ class ShiftAndDutyReportTests(TestCase):
                 else None
             ),
         )
+
+    def create_report_with_fuel_sale(self, *, status=DutyReport.Status.DRAFT):
+        report = self.create_report(self.employee, self.shift)
+        DutyFuelEntry.objects.create(
+            report=report,
+            nozzle=self.nozzle,
+            fuel_price=self.fuel_price,
+            opening_reading="1000.000",
+            closing_reading="1120.000",
+            testing_litres="2.000",
+            price_per_litre=Decimal("100.50"),
+        )
+        if status != DutyReport.Status.DRAFT:
+            report.status = status
+            report.submitted_at = timezone.now()
+            report.save(update_fields=("status", "submitted_at", "updated_at"))
+        return report
 
     def test_owner_can_create_shift_and_duplicate_name_is_rejected(self):
         self.client.force_login(self.owner)
@@ -708,3 +736,220 @@ class ShiftAndDutyReportTests(TestCase):
         entry.refresh_from_db()
         self.assertEqual(entry.unit_price, Decimal("250.00"))
         self.assertEqual(entry.sale_amount, Decimal("750.00"))
+
+    def test_dsms_collection_form_totals_cash_and_reconciles_report_sales(self):
+        report = self.create_report_with_fuel_sale()
+        self.client.force_login(self.dsms)
+        data = {
+            "cash_500_count": "20",
+            "cash_200_count": "0",
+            "cash_100_count": "0",
+            "cash_50_count": "0",
+            "cash_20_count": "0",
+            "cash_10_count": "0",
+            "cash_5_coin_count": "0",
+            "cash_2_coin_count": "0",
+            "cash_1_coin_count": "0",
+            "upi": "1859.00",
+            "debit_card": "0",
+            "credit_card": "0",
+            "credit_sales": "0",
+            "advances": "0",
+            "otp": "0",
+            "expenses": "125.00",
+            "expense_notes": "Cleaning supplies",
+        }
+
+        response = self.client.post(
+            reverse("duties:report-payment-collection", args=[report.pk]),
+            data,
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("duties:report-detail", args=[report.pk]),
+        )
+        collection = PaymentCollection.objects.get(report=report)
+        self.assertEqual(collection.cash_total, Decimal("10000.00"))
+        self.assertEqual(collection.duty_sales_total, Decimal("11859.00"))
+        self.assertEqual(
+            collection.reconciliation_summary()["actual_collections"],
+            Decimal("11859.00"),
+        )
+        self.assertEqual(
+            collection.reconciliation_summary()["status"],
+            PaymentCollection.ReconciliationStatus.MATCHED,
+        )
+        self.assertEqual(collection.expenses, Decimal("125.00"))
+        self.assertEqual(CashDenomination.objects.filter(collection=collection).count(), 9)
+
+        detail = self.client.get(reverse("duties:report-detail", args=[report.pk]))
+        self.assertContains(detail, "Matched")
+        self.assertContains(detail, "Expenses recorded separately")
+
+    def test_credit_sales_reduce_expected_collections_and_cannot_exceed_sales(self):
+        report = self.create_report_with_fuel_sale()
+        self.client.force_login(self.dsms)
+        response = self.client.post(
+            reverse("duties:report-payment-collection", args=[report.pk]),
+            {
+                "upi": "10000.00",
+                "debit_card": "0",
+                "credit_card": "0",
+                "credit_sales": "12000.00",
+                "advances": "0",
+                "otp": "0",
+                "expenses": "0",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("credit_sales", response.context["form"].errors)
+        self.assertFalse(PaymentCollection.objects.exists())
+
+        collection = PaymentCollection.objects.create(
+            report=report,
+            upi=Decimal("10000.00"),
+            credit_sales=Decimal("1859.00"),
+        )
+        summary = collection.reconciliation_summary()
+        self.assertEqual(summary["expected_collections"], Decimal("10000.00"))
+        self.assertEqual(summary["actual_collections"], Decimal("10000.00"))
+        self.assertEqual(summary["authorized_adjustments"], Decimal("0.00"))
+
+    def test_reconciliation_settings_control_inclusions_and_tolerance(self):
+        report = self.create_report_with_fuel_sale()
+        settings = ReconciliationSettings.objects.create(
+            station=self.station,
+            include_advances=False,
+            include_otp=False,
+            tolerance_amount=Decimal("1.00"),
+        )
+        collection = PaymentCollection.objects.create(
+            report=report,
+            upi=Decimal("1858.00"),
+            advances=Decimal("500.00"),
+            otp=Decimal("400.00"),
+        )
+        CashDenomination.objects.create(
+            collection=collection,
+            denomination=500,
+            count=20,
+        )
+
+        summary = collection.reconciliation_summary(settings)
+        self.assertEqual(summary["actual_collections"], Decimal("11858.00"))
+        self.assertEqual(summary["variance"], Decimal("-1.00"))
+        self.assertEqual(summary["status"], PaymentCollection.ReconciliationStatus.MATCHED)
+
+        settings.tolerance_amount = Decimal("0.00")
+        settings.save()
+        summary = collection.reconciliation_summary(settings)
+        self.assertEqual(summary["status"], PaymentCollection.ReconciliationStatus.SHORTAGE)
+
+        settings.include_advances = True
+        settings.include_otp = True
+        settings.save()
+        summary = collection.reconciliation_summary(settings)
+        self.assertEqual(summary["actual_collections"], Decimal("12758.00"))
+        self.assertEqual(summary["status"], PaymentCollection.ReconciliationStatus.EXCESS)
+
+    def test_expenses_are_not_counted_as_collections_or_hidden_as_adjustments(self):
+        report = self.create_report_with_fuel_sale()
+        collection = PaymentCollection.objects.create(
+            report=report,
+            upi=Decimal("11859.00"),
+            expenses=Decimal("2500.00"),
+        )
+
+        summary = collection.reconciliation_summary()
+
+        self.assertEqual(summary["actual_collections"], Decimal("11859.00"))
+        self.assertEqual(summary["authorized_adjustments"], Decimal("0.00"))
+        self.assertEqual(summary["variance"], Decimal("0.00"))
+
+    def test_owner_can_configure_reconciliation_policy_for_own_station(self):
+        self.client.force_login(self.owner)
+        url = reverse("duties:reconciliation-settings", args=[self.station.pk])
+        response = self.client.post(
+            url,
+            {
+                "include_advances": "on",
+                "tolerance_amount": "2.50",
+            },
+        )
+        self.assertRedirects(response, url)
+        settings = ReconciliationSettings.objects.get(station=self.station)
+        self.assertTrue(settings.include_advances)
+        self.assertFalse(settings.include_otp)
+        self.assertEqual(settings.tolerance_amount, Decimal("2.50"))
+
+        self.client.force_login(self.other_owner)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_authorized_adjustment_is_audited_and_does_not_change_collections(self):
+        report = self.create_report_with_fuel_sale()
+        collection = PaymentCollection.objects.create(
+            report=report,
+            upi=Decimal("11759.00"),
+        )
+        report.status = DutyReport.Status.SUBMITTED
+        report.submitted_at = timezone.now()
+        report.save(update_fields=("status", "submitted_at", "updated_at"))
+        self.client.force_login(self.manager)
+        url = reverse("duties:reconciliation-adjustment-create", args=[report.pk])
+
+        response = self.client.post(
+            url,
+            {"amount": "100.00", "reason": "Verified bank receipt"},
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("duties:report-detail", args=[report.pk]),
+        )
+        adjustment = ReconciliationAdjustment.objects.get(report=report)
+        self.assertEqual(adjustment.authorized_by, self.manager)
+        self.assertEqual(adjustment.amount, Decimal("100.00"))
+        summary = collection.reconciliation_summary()
+        self.assertEqual(summary["actual_collections"], Decimal("11759.00"))
+        self.assertEqual(summary["authorized_adjustments"], Decimal("100.00"))
+        self.assertEqual(summary["variance"], Decimal("0.00"))
+        self.assertEqual(summary["status"], PaymentCollection.ReconciliationStatus.MATCHED)
+
+        adjustment.amount = Decimal("200.00")
+        with self.assertRaises(ValidationError):
+            adjustment.save()
+
+    def test_dsms_cannot_authorize_adjustments_or_edit_submitted_collections(self):
+        report = self.create_report_with_fuel_sale(status=DutyReport.Status.SUBMITTED)
+        self.client.force_login(self.dsms)
+
+        adjustment_response = self.client.get(
+            reverse("duties:reconciliation-adjustment-create", args=[report.pk])
+        )
+        collection_response = self.client.get(
+            reverse("duties:report-payment-collection", args=[report.pk])
+        )
+
+        self.assertEqual(adjustment_response.status_code, 403)
+        self.assertEqual(collection_response.status_code, 403)
+
+    def test_owner_cannot_authorize_adjustment_for_another_owners_station(self):
+        other_employee = self.make_employee(
+            self.other_owner,
+            self.make_staff("other-dsms-3", User.Role.DSMS, self.other_owner),
+            self.other_station,
+            "EMP-006",
+        )
+        report = self.create_report(other_employee, self.other_shift)
+        report.status = DutyReport.Status.SUBMITTED
+        report.submitted_at = timezone.now()
+        report.save(update_fields=("status", "submitted_at", "updated_at"))
+        self.client.force_login(self.owner)
+
+        response = self.client.get(
+            reverse("duties:reconciliation-adjustment-create", args=[report.pk])
+        )
+
+        self.assertEqual(response.status_code, 404)

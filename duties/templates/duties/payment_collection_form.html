@@ -1,0 +1,63 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Payment collections | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ report.station.name }} · {{ report.shift.name }}</p>
+        <h1>Record payment collections</h1>
+        <p class="dashboard-subtitle">{{ report.report_date|date:"j F Y" }} · Enter tender totals and cash denomination counts.</p>
+    </div>
+</section>
+
+<section class="panel">
+    <form method="post">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+        <h2 class="h5">Cash denominations</h2>
+        <p class="text-secondary">Enter the number of notes or coins collected. Cash total is calculated from these counts.</p>
+        <div class="row g-3">
+            {% for field, label in cash_fields %}
+                <div class="col-sm-6 col-lg-4">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+        <hr>
+        <h2 class="h5">Other tender and sales</h2>
+        <p class="text-secondary">Credit sales are part of duty sales but are not money collected. Advances and OTP count according to the station reconciliation policy.</p>
+        <div class="row g-3">
+            {% for field in tender_fields %}
+                <div class="col-sm-6 col-lg-4">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                    {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+        <hr>
+        <h2 class="h5">Expenses (recorded separately)</h2>
+        <p class="text-secondary">Expenses are not counted as collections or used to hide a sales variance.</p>
+        <div class="row g-3">
+            <div class="col-sm-6">
+                <label class="form-label" for="{{ form.expenses.id_for_label }}">Expense amount</label>
+                {{ form.expenses }}
+                {% for error in form.expenses.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label" for="{{ form.expense_notes.id_for_label }}">Expense notes</label>
+                {{ form.expense_notes }}
+                {% for error in form.expense_notes.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+            </div>
+        </div>
+        <div class="form-actions">
+            <a class="btn btn-outline-secondary" href="{% url 'duties:report-detail' report.pk %}">Cancel</a>
+            <button class="btn btn-primary" type="submit">Save collections</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

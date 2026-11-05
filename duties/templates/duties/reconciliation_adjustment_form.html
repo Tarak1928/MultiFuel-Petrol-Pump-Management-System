@@ -1,0 +1,37 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Authorize reconciliation adjustment | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ report.station.name }} · {{ report.shift.name }}</p>
+        <h1>Authorize reconciliation adjustment</h1>
+        <p class="dashboard-subtitle">{{ report.report_date|date:"j F Y" }} · Signed, auditable adjustments affect only the recorded reconciliation.</p>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="alert alert-info" role="note">
+        Use a positive amount to increase collections or a negative amount to reduce them. Adjustments do not change recorded sales, tender totals, or expenses.
+    </div>
+    <form method="post">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+        <div class="mb-3">
+            <label class="form-label" for="{{ form.amount.id_for_label }}">Signed adjustment amount (₹)</label>
+            {{ form.amount }}
+            {% for error in form.amount.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="{{ form.reason.id_for_label }}">Reason</label>
+            {{ form.reason }}
+            {% for error in form.reason.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="form-actions">
+            <a class="btn btn-outline-secondary" href="{% url 'duties:report-detail' report.pk %}">Cancel</a>
+            <button class="btn btn-primary" type="submit">Authorize adjustment</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

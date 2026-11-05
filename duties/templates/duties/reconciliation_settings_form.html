@@ -1,0 +1,40 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Reconciliation settings | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ station.name }} · {{ station.code }}</p>
+        <h1>Reconciliation settings</h1>
+        <p class="dashboard-subtitle">Configure which settlements count and the permitted matching tolerance.</p>
+    </div>
+</section>
+
+<section class="panel">
+    <form method="post">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+        <div class="form-check mb-3">
+            {{ form.include_advances }}
+            <label class="form-check-label" for="{{ form.include_advances.id_for_label }}">Count advances applied to the shift</label>
+            {% for error in form.include_advances.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="form-check mb-3">
+            {{ form.include_otp }}
+            <label class="form-check-label" for="{{ form.include_otp.id_for_label }}">Count OTP transactions</label>
+            {% for error in form.include_otp.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="{{ form.tolerance_amount.id_for_label }}">Matching tolerance (₹)</label>
+            {{ form.tolerance_amount }}
+            <div class="form-text">A variance within this amount is marked matched. Use ₹0.00 for exact matching.</div>
+            {% for error in form.tolerance_amount.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="form-actions">
+            <a class="btn btn-outline-secondary" href="{% url 'stations:station-list' %}">Back to stations</a>
+            <button class="btn btn-primary" type="submit">Save reconciliation policy</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

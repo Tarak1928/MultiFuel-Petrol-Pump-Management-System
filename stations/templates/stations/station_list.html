@@ -50,6 +50,7 @@
                                     <a class="btn btn-sm btn-outline-primary" href="{% url 'fuel:station-fuel' station.pk %}">Fuel setup</a>
                                     <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:shift-list' station.pk %}">Shifts</a>
                                     <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:lubricant-list' station.pk %}">Lubricants</a>
+                                    <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:reconciliation-settings' station.pk %}">Reconciliation</a>
                                     <form method="post" action="{% url 'stations:station-toggle-status' station.pk %}">
                                         {% csrf_token %}
                                         {% if station.is_active %}

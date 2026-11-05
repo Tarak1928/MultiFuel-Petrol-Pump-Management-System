@@ -19,9 +19,19 @@ from .forms import (
     DutyReportCreateForm,
     DutyReportForm,
     LubricantForm,
+    PaymentCollectionForm,
+    ReconciliationAdjustmentForm,
+    ReconciliationSettingsForm,
     ShiftForm,
 )
-from .models import DutyReport, Lubricant, Shift
+from .models import (
+    DutyReport,
+    Lubricant,
+    PaymentCollection,
+    ReconciliationAdjustment,
+    ReconciliationSettings,
+    Shift,
+)
 
 
 def _accessible_stations(user):
@@ -307,6 +317,24 @@ def report_detail(request, report_id):
         (entry.sale_amount for entry in fuel_entries),
         start=Decimal("0.00"),
     )
+    collection = PaymentCollection.objects.filter(report=report).first()
+    reconciliation_settings = ReconciliationSettings.objects.filter(
+        station=report.station
+    ).first()
+    reconciliation = (
+        collection.reconciliation_summary(reconciliation_settings)
+        if collection
+        else None
+    )
+    can_edit_collection = (
+        request.user.role == User.Role.DSMS
+        and report.status
+        in (DutyReport.Status.DRAFT, DutyReport.Status.CORRECTION_REQUESTED)
+    )
+    can_authorize_adjustments = (
+        request.user.role in (User.Role.OWNER, User.Role.MANAGER)
+        and report.status in (DutyReport.Status.SUBMITTED, DutyReport.Status.APPROVED)
+    )
     return render(
         request,
         "duties/report_detail.html",
@@ -322,7 +350,142 @@ def report_detail(request, report_id):
             "total_fuel_sales": total_fuel_sales,
             "total_lubricant_sales": total_lubricant_sales,
             "total_duty_sales": total_fuel_sales + total_lubricant_sales,
+            "collection": collection,
+            "reconciliation": reconciliation,
+            "reconciliation_settings": reconciliation_settings,
+            "adjustments": report.reconciliation_adjustments.select_related(
+                "authorized_by"
+            ),
+            "can_edit_collection": can_edit_collection,
+            "can_authorize_adjustments": can_authorize_adjustments,
         },
+    )
+
+
+@role_required(User.Role.OWNER)
+def reconciliation_settings_update(request, station_id):
+    station = get_object_or_404(
+        Station.objects.filter(owner=request.user),
+        pk=station_id,
+    )
+    settings = ReconciliationSettings.objects.filter(station=station).first()
+    if request.method == "POST":
+        form = ReconciliationSettingsForm(request.POST, instance=settings)
+        if form.is_valid():
+            settings = form.save(commit=False)
+            settings.station = station
+            settings.save()
+            messages.success(request, "Reconciliation settings were saved.")
+            return redirect("duties:reconciliation-settings", station_id=station.pk)
+    else:
+        form = ReconciliationSettingsForm(instance=settings)
+    return render(
+        request,
+        "duties/reconciliation_settings_form.html",
+        {"station": station, "form": form},
+    )
+
+
+@role_required(User.Role.DSMS)
+def report_payment_collection(request, report_id):
+    if request.method == "POST":
+        with transaction.atomic():
+            report = get_object_or_404(
+                DutyReport.objects.select_for_update().select_related("station"),
+                pk=report_id,
+                employee__user=request.user,
+            )
+            if report.status not in (
+                DutyReport.Status.DRAFT,
+                DutyReport.Status.CORRECTION_REQUESTED,
+            ):
+                raise PermissionDenied
+            collection = PaymentCollection.objects.filter(report=report).first()
+            form = PaymentCollectionForm(
+                report,
+                request.POST,
+                instance=collection,
+            )
+            if form.is_valid():
+                form.save()
+                messages.success(request, "Payment collection details were saved.")
+                return redirect("duties:report-detail", report_id=report.pk)
+    else:
+        report = get_object_or_404(
+            DutyReport.objects.select_related("station"),
+            pk=report_id,
+            employee__user=request.user,
+        )
+        if report.status not in (
+            DutyReport.Status.DRAFT,
+            DutyReport.Status.CORRECTION_REQUESTED,
+        ):
+            raise PermissionDenied
+        collection = PaymentCollection.objects.filter(report=report).first()
+        form = PaymentCollectionForm(report, instance=collection)
+    return render(
+        request,
+        "duties/payment_collection_form.html",
+        {
+            "report": report,
+            "form": form,
+            "cash_fields": [
+                (form[field_name], label)
+                for field_name, label in (
+                    ("cash_500_count", "₹500 notes"),
+                    ("cash_200_count", "₹200 notes"),
+                    ("cash_100_count", "₹100 notes"),
+                    ("cash_50_count", "₹50 notes"),
+                    ("cash_20_count", "₹20 notes"),
+                    ("cash_10_count", "₹10 notes"),
+                    ("cash_5_coin_count", "₹5 coins"),
+                    ("cash_2_coin_count", "₹2 coins"),
+                    ("cash_1_coin_count", "₹1 coins"),
+                )
+            ],
+            "tender_fields": [
+                form[field_name]
+                for field_name in (
+                    "upi",
+                    "debit_card",
+                    "credit_card",
+                    "credit_sales",
+                    "advances",
+                    "otp",
+                )
+            ],
+        },
+    )
+
+
+@role_required(User.Role.OWNER, User.Role.MANAGER)
+def reconciliation_adjustment_create(request, report_id):
+    if request.method == "POST":
+        with transaction.atomic():
+            report = get_object_or_404(
+                _accessible_reports(request.user).select_for_update(),
+                pk=report_id,
+                status__in=(DutyReport.Status.SUBMITTED, DutyReport.Status.APPROVED),
+            )
+            form = ReconciliationAdjustmentForm(report, request.user, request.POST)
+            if form.is_valid():
+                adjustment = form.save()
+                messages.success(
+                    request,
+                    f"Authorized adjustment of ₹{adjustment.amount:.2f} was recorded.",
+                )
+                return redirect("duties:report-detail", report_id=report.pk)
+    else:
+        report = get_object_or_404(
+            _accessible_reports(request.user),
+            pk=report_id,
+            status__in=(DutyReport.Status.SUBMITTED, DutyReport.Status.APPROVED),
+        )
+        form = ReconciliationAdjustmentForm(report, request.user)
+    return render(
+        request,
+        "duties/reconciliation_adjustment_form.html",
+        {"report": report, "form": form},
     )
 
 
