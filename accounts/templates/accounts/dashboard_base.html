@@ -1,0 +1,13 @@
+{% extends "accounts/base.html" %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{% block dashboard_eyebrow %}Workspace{% endblock %}</p>
+        <h1>{% block dashboard_title %}Dashboard{% endblock %}</h1>
+        <p class="dashboard-subtitle">{% block dashboard_subtitle %}{% endblock %}</p>
+    </div>
+    <div class="today-chip"><span class="status-dot"></span> Account approved</div>
+</section>
+{% block dashboard_content %}{% endblock %}
+{% endblock %}

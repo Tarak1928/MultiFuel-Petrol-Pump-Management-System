@@ -1,0 +1,51 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Duty reports | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Operations</p>
+        <h1>Duty reports</h1>
+        <p class="dashboard-subtitle">Daily reports for stations you are authorized to access.</p>
+    </div>
+    {% if user.role == "DSMS" %}
+        <a class="btn btn-primary" href="{% url 'duties:report-create' %}">Create duty report</a>
+    {% endif %}
+</section>
+
+<section class="panel">
+    {% if reports %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead>
+                    <tr><th>Date</th><th>Station</th><th>Employee</th><th>Shift</th><th>Status</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for report in reports %}
+                        <tr>
+                            <td><strong>{{ report.report_date|date:"j M Y" }}</strong></td>
+                            <td>{{ report.station.name }}</td>
+                            <td>{{ report.employee.user.get_full_name|default:report.employee.user.username }}</td>
+                            <td>{{ report.shift.name }}</td>
+                            <td><span class="status-pill {% if report.status == 'approved' %}status-active{% elif report.status == 'correction_requested' %}status-suspended{% else %}role-pill{% endif %}">{{ report.get_status_display }}</span></td>
+                            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'duties:report-detail' report.pk %}">View report</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">—</span>
+            <h2>No duty reports yet</h2>
+            {% if user.role == "DSMS" %}
+                <p>Create a report for your assigned station after selecting a configured shift.</p>
+                <a class="btn btn-primary" href="{% url 'duties:report-create' %}">Create duty report</a>
+            {% else %}
+                <p>Reports from your assigned stations will appear here after DSMS staff submit them.</p>
+            {% endif %}
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

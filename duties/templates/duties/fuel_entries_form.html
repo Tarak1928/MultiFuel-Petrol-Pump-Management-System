@@ -1,0 +1,91 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Nozzle readings | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ report.station.name }} · {{ report.report_date|date:"j M Y" }}</p>
+        <h1>Nozzle meter readings</h1>
+        <p class="dashboard-subtitle">{{ report.shift.name }} · Record every active nozzle before submitting.</p>
+    </div>
+</section>
+
+<section class="panel station-form-panel">
+    <form method="post" novalidate>
+        {% csrf_token %}
+        {{ formset.management_form }}
+        {% if formset.non_form_errors %}
+            <div class="alert alert-danger" role="alert">{{ formset.non_form_errors }}</div>
+        {% endif %}
+        <div id="fuel-entry-forms">
+            {% for form in formset %}
+                <article class="panel mb-3 fuel-entry-row">
+                    {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+                    {% endif %}
+                    <div class="station-form-grid">
+                        {% for field in form.visible_fields %}
+                            <div>
+                                {% if field.name == "DELETE" %}
+                                    <div class="form-check">
+                                        {{ field }}
+                                        <label class="form-check-label" for="{{ field.id_for_label }}">Remove this nozzle entry</label>
+                                    </div>
+                                {% else %}
+                                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                    {{ field }}
+                                {% endif %}
+                                {% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+        <template id="empty-fuel-entry">
+            <article class="panel mb-3 fuel-entry-row">
+                {% for hidden in formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+                <div class="station-form-grid">
+                    {% for field in formset.empty_form.visible_fields %}
+                        <div>
+                            {% if field.name == "DELETE" %}
+                                <div class="form-check">
+                                    {{ field }}
+                                    <label class="form-check-label" for="{{ field.id_for_label }}">Remove this nozzle entry</label>
+                                </div>
+                            {% else %}
+                                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                {{ field }}
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </article>
+        </template>
+        <div class="d-flex flex-wrap gap-2 justify-content-between mt-3">
+            <a class="btn btn-outline-secondary" href="{% url 'duties:report-detail' report.pk %}">Cancel</a>
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-outline-primary" id="add-fuel-entry" type="button">Add nozzle</button>
+                <button class="btn btn-primary" type="submit">Save readings</button>
+            </div>
+        </div>
+    </form>
+</section>
+<script>
+    (() => {
+        const totalForms = document.getElementById("id_fuel_entries-TOTAL_FORMS");
+        const template = document.getElementById("empty-fuel-entry");
+        const container = document.getElementById("fuel-entry-forms");
+        document.getElementById("add-fuel-entry").addEventListener("click", () => {
+            const index = Number(totalForms.value);
+            container.insertAdjacentHTML(
+                "beforeend",
+                template.innerHTML.replaceAll("__prefix__", index),
+            );
+            totalForms.value = index + 1;
+        });
+    })();
+</script>
+{% endblock %}

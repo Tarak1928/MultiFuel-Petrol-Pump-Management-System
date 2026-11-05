@@ -1,0 +1,43 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}{{ page_title }} | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Owner workspace</p>
+        <h1>{{ page_title }}</h1>
+        <p class="dashboard-subtitle">Only staff accounts approved by you and your active stations can be assigned.</p>
+    </div>
+</section>
+
+<section class="panel station-form-panel employee-form-panel">
+    <form method="post" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+        {% endif %}
+        <div class="employee-form-grid">
+            {% for field in form %}
+                <div class="{% if field.name == 'manager_stations' %}form-field-wide{% endif %}">
+                    {% if field.name == 'is_active' %}
+                        <div class="form-check">
+                            {{ field }}
+                            <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        </div>
+                    {% else %}
+                        <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                    {% endif %}
+                    {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                    {% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+        <div class="form-actions">
+            <a class="btn btn-outline-secondary" href="{% url 'employees:employee-list' %}">Cancel</a>
+            <button class="btn btn-primary" type="submit">{{ submit_label }}</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

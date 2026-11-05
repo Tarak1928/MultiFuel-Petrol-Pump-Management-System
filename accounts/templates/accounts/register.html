@@ -1,0 +1,40 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Request access | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="auth-layout auth-layout-compact">
+    <div class="auth-story">
+        <p class="eyebrow">Join your team</p>
+        <h1>Request your MultiFuel account.</h1>
+        <p class="story-copy">Choose your petrol pump Owner. They will review your role and approve access before you can sign in.</p>
+        <div class="story-rule"></div>
+        <p class="story-footnote">Owner accounts are created by the system administrator.</p>
+    </div>
+    <div class="auth-card">
+        <div class="card-heading">
+            <p class="eyebrow">Staff registration</p>
+            <h2>Create a request</h2>
+            <p>Choose your Owner and role, then provide your account details.</p>
+        </div>
+        <form method="post" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+            {% endif %}
+            {% for field in form %}
+                <div class="mb-3">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<div class="form-text">{{ field.help_text|safe }}</div>{% endif %}
+                    {% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                </div>
+            {% endfor %}
+            <button class="btn btn-primary w-100 mt-2" type="submit">Submit for approval</button>
+        </form>
+        <div class="auth-links">
+            <span>Already have access? <a href="{% url 'login' %}">Sign in</a></span>
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Stations | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Owner workspace</p>
+        <h1>Your stations</h1>
+        <p class="dashboard-subtitle">Maintain station profiles and control whether each station is active.</p>
+    </div>
+    <a class="btn btn-primary" href="{% url 'stations:station-create' %}">Add station</a>
+</section>
+
+<section class="panel">
+    {% if stations %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table station-table">
+                <thead>
+                    <tr>
+                        <th>Station</th>
+                        <th>Location</th>
+                        <th>Contact</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for station in stations %}
+                        <tr>
+                            <td>
+                                <strong>{{ station.name }}</strong>
+                                <span class="table-secondary">Code: {{ station.code }}</span>
+                            </td>
+                            <td>
+                                {{ station.city }}, {{ station.state }}
+                                <span class="table-secondary">{{ station.address }} · {{ station.postal_code }}</span>
+                            </td>
+                            <td>{{ station.contact_number|default:"—" }}</td>
+                            <td>
+                                {% if station.is_active %}
+                                    <span class="status-pill status-active">Active</span>
+                                {% else %}
+                                    <span class="status-pill status-suspended">Suspended</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="station-actions">
+                                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'stations:station-update' station.pk %}">Edit</a>
+                                    <a class="btn btn-sm btn-outline-primary" href="{% url 'fuel:station-fuel' station.pk %}">Fuel setup</a>
+                                    <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:shift-list' station.pk %}">Shifts</a>
+                                    <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:lubricant-list' station.pk %}">Lubricants</a>
+                                    <form method="post" action="{% url 'stations:station-toggle-status' station.pk %}">
+                                        {% csrf_token %}
+                                        {% if station.is_active %}
+                                            <button class="btn btn-sm btn-outline-danger" type="submit">Suspend</button>
+                                        {% else %}
+                                            <button class="btn btn-sm btn-outline-success" type="submit">Activate</button>
+                                        {% endif %}
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">+</span>
+            <h3>Add your first station</h3>
+            <p>Create a station profile to begin organizing your MultiFuel operations.</p>
+            <a class="btn btn-primary" href="{% url 'stations:station-create' %}">Add station</a>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

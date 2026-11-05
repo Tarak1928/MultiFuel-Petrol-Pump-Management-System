@@ -1,0 +1,41 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Sign in | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="auth-layout">
+    <div class="auth-story">
+        <p class="eyebrow">One view. Every station.</p>
+        <h1>Run your forecourt with confidence.</h1>
+        <p class="story-copy">A clear, dependable workspace for the people who keep every shift moving.</p>
+        <div class="story-rule"></div>
+        <p class="story-footnote">Multi-station operations, made accountable.</p>
+    </div>
+    <div class="auth-card">
+        <div class="card-heading">
+            <p class="eyebrow">Welcome back</p>
+            <h2>Sign in to MultiFuel</h2>
+            <p>Use your approved staff account to continue.</p>
+        </div>
+        <form method="post" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+            {% endif %}
+            {% for field in form %}
+                <div class="mb-3">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                </div>
+            {% endfor %}
+            <input type="hidden" name="next" value="{{ next }}">
+            <button class="btn btn-primary w-100 mt-2" type="submit">Sign in</button>
+        </form>
+        <div class="auth-links">
+            <a href="{% url 'password-reset' %}">Forgot your password?</a>
+            <span>New to MultiFuel? <a href="{% url 'register' %}">Request access</a></span>
+        </div>
+    </div>
+</section>
+{% endblock %}

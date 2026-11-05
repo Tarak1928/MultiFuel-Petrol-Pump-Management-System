@@ -1,0 +1,146 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Fuel setup · {{ station.name }} | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Station fuel setup · {{ station.code }}</p>
+        <h1>{{ station.name }}</h1>
+        <p class="dashboard-subtitle">{{ station.address }}, {{ station.city }}, {{ station.state }}</p>
+    </div>
+    <div class="fuel-page-actions">
+        <a class="btn btn-outline-secondary" href="{% url 'fuel:fuel-type-list' %}">Fuel types</a>
+        <a class="btn btn-outline-secondary" href="{% url 'stations:station-list' %}">All stations</a>
+    </div>
+</section>
+
+{% if not station.is_active %}
+    <div class="alert alert-warning" role="status">This station is suspended. Fuel configuration is retained, but the station is not active.</div>
+{% endif %}
+
+<section class="panel fuel-section">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Storage</p>
+            <h2>Fuel tanks</h2>
+        </div>
+        <a class="btn btn-sm btn-primary" href="{% url 'fuel:tank-create' station.pk %}">Add tank</a>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle staff-table">
+            <thead><tr><th>Tank</th><th>Fuel</th><th>Capacity (L)</th><th>Stock (L)</th><th>Reorder (L)</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+                {% for tank in tanks %}
+                    <tr>
+                        <td><strong>{{ tank.code }}</strong></td>
+                        <td>{{ tank.fuel_type.name }} ({{ tank.fuel_type.code }})</td>
+                        <td>{{ tank.capacity_litres }}</td>
+                        <td>{{ tank.current_stock_litres }}</td>
+                        <td>{{ tank.reorder_level_litres }}</td>
+                        <td>{% if tank.is_active %}<span class="status-pill status-active">Active</span>{% else %}<span class="status-pill status-suspended">Inactive</span>{% endif %}</td>
+                        <td>
+                            <div class="station-actions">
+                                <a class="btn btn-sm btn-outline-secondary" href="{% url 'fuel:tank-update' station.pk tank.pk %}">Edit</a>
+                                <form method="post" action="{% url 'fuel:tank-toggle-status' station.pk tank.pk %}">
+                                    {% csrf_token %}
+                                    {% if tank.is_active %}
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">Deactivate</button>
+                                    {% else %}
+                                        <button class="btn btn-sm btn-outline-success" type="submit">Activate</button>
+                                    {% endif %}
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7" class="text-center text-secondary py-4">No tanks configured. Add a tank after selecting an active fuel type.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel fuel-section">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Dispensing</p>
+            <h2>Nozzles</h2>
+        </div>
+        <a class="btn btn-sm btn-primary" href="{% url 'fuel:nozzle-create' station.pk %}">Add nozzle</a>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle staff-table">
+            <thead><tr><th>Nozzle</th><th>Tank</th><th>Fuel</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+                {% for nozzle in nozzles %}
+                    <tr>
+                        <td><strong>{{ nozzle.code }}</strong></td>
+                        <td>{{ nozzle.tank.code }}</td>
+                        <td>{{ nozzle.fuel_type.name }}</td>
+                        <td>{% if nozzle.is_active %}<span class="status-pill status-active">Active</span>{% else %}<span class="status-pill status-suspended">Inactive</span>{% endif %}</td>
+                        <td>
+                            <div class="station-actions">
+                                <a class="btn btn-sm btn-outline-secondary" href="{% url 'fuel:nozzle-update' station.pk nozzle.pk %}">Edit</a>
+                                <form method="post" action="{% url 'fuel:nozzle-toggle-status' station.pk nozzle.pk %}">
+                                    {% csrf_token %}
+                                    {% if nozzle.is_active %}
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">Deactivate</button>
+                                    {% else %}
+                                        <button class="btn btn-sm btn-outline-success" type="submit">Activate</button>
+                                    {% endif %}
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="5" class="text-center text-secondary py-4">No nozzles configured. Add a tank first.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel fuel-section">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Pricing</p>
+            <h2>Current fuel prices</h2>
+        </div>
+        <a class="btn btn-sm btn-primary" href="{% url 'fuel:fuel-price-create' station.pk %}">Record price</a>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle staff-table">
+            <thead><tr><th>Fuel</th><th>Price / litre</th><th>Effective from</th></tr></thead>
+            <tbody>
+                {% for price in current_prices %}
+                    <tr><td><strong>{{ price.fuel_type.name }}</strong> ({{ price.fuel_type.code }})</td><td>₹{{ price.price_per_litre }}</td><td>{{ price.effective_from|date:"j M Y, g:i A" }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="3" class="text-center text-secondary py-4">No effective prices recorded yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel fuel-section">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Audit history</p>
+            <h2>Price history</h2>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle staff-table">
+            <thead><tr><th>Fuel</th><th>Price / litre</th><th>Effective from</th><th>Recorded by</th><th>Recorded at</th></tr></thead>
+            <tbody>
+                {% for price in price_history %}
+                    <tr><td>{{ price.fuel_type.name }} ({{ price.fuel_type.code }})</td><td>₹{{ price.price_per_litre }}</td><td>{{ price.effective_from|date:"j M Y, g:i A" }}</td><td>{{ price.recorded_by.get_full_name|default:price.recorded_by.username }}</td><td>{{ price.created_at|date:"j M Y, g:i A" }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="5" class="text-center text-secondary py-4">Price updates will appear here and cannot be edited or deleted.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "accounts/dashboard_base.html" %}
+
+{% block title %}Owner dashboard | MultiFuel{% endblock %}
+{% block dashboard_eyebrow %}Owner workspace{% endblock %}
+{% block dashboard_title %}Good to see you, {{ user.first_name|default:user.username }}{% endblock %}
+{% block dashboard_subtitle %}Manage access to your MultiFuel workspace and track setup progress.{% endblock %}
+
+{% block dashboard_content %}
+<div class="dashboard-grid">
+    <section class="panel station-summary">
+        <p class="eyebrow">Station network</p>
+        <div class="station-metrics">
+            <div>
+                <strong>{{ station_count }}</strong>
+                <span>Total stations</span>
+            </div>
+            <div>
+                <strong>{{ active_station_count }}</strong>
+                <span>Active</span>
+            </div>
+            <div>
+                <strong>{{ employee_count }}</strong>
+                <span>Employees</span>
+            </div>
+        </div>
+        <p class="station-summary-copy">Manage your stations, staff, and station access.</p>
+        <a class="btn btn-primary w-100 mb-2" href="{% url 'stations:station-list' %}">Manage stations</a>
+        <a class="btn btn-outline-secondary w-100" href="{% url 'employees:employee-list' %}">Manage employees</a>
+    </section>
+    <section class="panel panel-wide">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Access management</p>
+                <h2>Staff approval queue</h2>
+            </div>
+            <span class="count-pill">{{ pending_accounts|length }} pending</span>
+        </div>
+        {% if pending_accounts %}
+            <div class="table-responsive">
+                <table class="table align-middle staff-table">
+                    <thead>
+                        <tr><th>Team member</th><th>Requested role</th><th>Requested</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for account in pending_accounts %}
+                            <tr>
+                                <td>
+                                    <strong>{{ account.get_full_name|default:account.username }}</strong>
+                                    <span class="table-secondary">{{ account.email|default:"No email provided" }}</span>
+                                </td>
+                                <td><span class="role-pill">{{ account.get_role_display }}</span></td>
+                                <td>{{ account.date_joined|date:"j M Y" }}</td>
+                                <td>
+                                    <form method="post" action="{% url 'approve-account' account.pk %}">
+                                        {% csrf_token %}
+                                        <button class="btn btn-sm btn-primary" type="submit">Approve</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <span class="empty-icon" aria-hidden="true">✓</span>
+                <h3>You’re all caught up</h3>
+                <p>New Manager and DSMS registration requests will appear here.</p>
+            </div>
+        {% endif %}
+    </section>
+    <section class="panel setup-panel">
+        <p class="eyebrow">Next up</p>
+        <h2>Fuel operations</h2>
+        <p>Manage shift schedules for each station and review submitted duty reports.</p>
+        <a class="btn btn-outline-primary w-100 mb-2" href="{% url 'duties:report-list' %}">View duty reports</a>
+        <a class="btn btn-outline-secondary w-100" href="{% url 'stations:station-list' %}">Configure station shifts</a>
+    </section>
+</div>
+{% endblock %}

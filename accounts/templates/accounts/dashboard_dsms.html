@@ -1,0 +1,33 @@
+{% extends "accounts/dashboard_base.html" %}
+
+{% block title %}DSMS dashboard | MultiFuel{% endblock %}
+{% block dashboard_eyebrow %}Duty staff workspace{% endblock %}
+{% block dashboard_title %}Welcome, {{ user.first_name|default:user.username }}{% endblock %}
+{% block dashboard_subtitle %}Your starting point for shift and duty-report work.{% endblock %}
+
+{% block dashboard_content %}
+{% if employee and employee.assigned_station and employee.assigned_station.is_active %}
+    <section class="panel assigned-station-card dsms-station-card">
+        <span class="onboarding-icon" aria-hidden="true">01</span>
+        <div>
+            <p class="eyebrow">Your assigned station</p>
+            <h2>{{ employee.assigned_station.name }}</h2>
+            <p>{{ employee.assigned_station.code }} · {{ employee.assigned_station.address }}, {{ employee.assigned_station.city }}</p>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <a class="btn btn-primary" href="{% url 'duties:report-create' %}">Create duty report</a>
+                <a class="btn btn-outline-secondary" href="{% url 'duties:report-list' %}">Duty report history</a>
+                <a class="btn btn-outline-secondary" href="{% url 'duties:shift-list' employee.assigned_station.pk %}">Shift schedule</a>
+            </div>
+        </div>
+    </section>
+{% else %}
+    <section class="panel onboarding-panel">
+        <span class="onboarding-icon" aria-hidden="true">01</span>
+        <div>
+            <p class="eyebrow">Workspace setup in progress</p>
+            <h2>Your station is not assigned yet</h2>
+            <p>Your Owner needs to create your employee profile and assign one active station. Your duty workspace will appear here after that is done.</p>
+        </div>
+    </section>
+{% endif %}
+{% endblock %}

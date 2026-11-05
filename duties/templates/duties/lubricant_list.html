@@ -1,0 +1,70 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}{{ station.name }} lubricants | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ station.name }} · {{ station.code }}</p>
+        <h1>Lubricant inventory</h1>
+        <p class="dashboard-subtitle">View products, selling prices, and available stock at this station.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="{% url 'duties:report-list' %}">Duty reports</a>
+        {% if user.role == "OWNER" %}
+            <a class="btn btn-primary" href="{% url 'duties:lubricant-create' station.pk %}">Add lubricant</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="panel">
+    {% if products %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead>
+                    <tr><th>Product</th><th>Unit</th><th>Stock</th><th>Selling price</th><th>Status</th>{% if user.role == "OWNER" %}<th class="text-end">Actions</th>{% endif %}</tr>
+                </thead>
+                <tbody>
+                    {% for product in products %}
+                        <tr>
+                            <td><strong>{{ product.name }}</strong><span class="table-secondary">Code: {{ product.code }}</span></td>
+                            <td>{{ product.unit }}</td>
+                            <td>{{ product.current_stock|floatformat:3 }}</td>
+                            <td>₹{{ product.selling_price|floatformat:2 }}</td>
+                            <td>
+                                {% if product.is_active %}
+                                    <span class="status-pill status-active">Active</span>
+                                {% else %}
+                                    <span class="status-pill status-suspended">Inactive</span>
+                                {% endif %}
+                            </td>
+                            {% if user.role == "OWNER" %}
+                                <td>
+                                    <div class="station-actions">
+                                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'duties:lubricant-update' station.pk product.pk %}">Edit</a>
+                                        <form method="post" action="{% url 'duties:lubricant-toggle-status' station.pk product.pk %}">
+                                            {% csrf_token %}
+                                            <button class="btn btn-sm {% if product.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}" type="submit">
+                                                {% if product.is_active %}Deactivate{% else %}Activate{% endif %}
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            {% endif %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">+</span>
+            <h2>No lubricant products yet</h2>
+            <p>An Owner can add products and configure their opening stock and selling prices.</p>
+            {% if user.role == "OWNER" %}
+                <a class="btn btn-primary" href="{% url 'duties:lubricant-create' station.pk %}">Add the first product</a>
+            {% endif %}
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

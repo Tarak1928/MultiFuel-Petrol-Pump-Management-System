@@ -1,0 +1,81 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Employees | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Owner workspace</p>
+        <h1>Employees and assignments</h1>
+        <p class="dashboard-subtitle">Create employee profiles for accounts approved by you and assign their station access.</p>
+    </div>
+    <a class="btn btn-primary" href="{% url 'employees:employee-create' %}">Add employee</a>
+</section>
+
+<section class="panel">
+    {% if employees %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table employee-table">
+                <thead>
+                    <tr>
+                        <th>Employee</th>
+                        <th>Role</th>
+                        <th>Station access</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for employee in employees %}
+                        <tr>
+                            <td>
+                                <strong>{{ employee.user.get_full_name|default:employee.user.username }}</strong>
+                                <span class="table-secondary">{{ employee.employee_code }} · {{ employee.phone|default:employee.user.email|default:"No contact" }}</span>
+                            </td>
+                            <td><span class="role-pill">{{ employee.user.get_role_display }}</span></td>
+                            <td>
+                                {% if employee.user.role == "DSMS" %}
+                                    {{ employee.assigned_station|default:"No station assigned" }}
+                                {% elif employee.manager_assignments.all %}
+                                    {% for assignment in employee.manager_assignments.all %}
+                                        <span class="station-access-item">{{ assignment.station.name }}{% if not assignment.station.is_active %} (suspended){% endif %}</span>
+                                    {% endfor %}
+                                {% else %}
+                                    No stations assigned
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if employee.is_active %}
+                                    <span class="status-pill status-active">Active</span>
+                                {% else %}
+                                    <span class="status-pill status-suspended">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="station-actions">
+                                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'employees:employee-update' employee.pk %}">Edit</a>
+                                    <form method="post" action="{% url 'employees:employee-toggle-status' employee.pk %}">
+                                        {% csrf_token %}
+                                        {% if employee.is_active %}
+                                            <button class="btn btn-sm btn-outline-danger" type="submit">Deactivate</button>
+                                        {% else %}
+                                            <button class="btn btn-sm btn-outline-success" type="submit">Activate</button>
+                                        {% endif %}
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">+</span>
+            <h3>No employee profiles yet</h3>
+            <p>Approve staff registration requests, then create profiles and assign station access here.</p>
+            <a class="btn btn-primary" href="{% url 'employees:employee-create' %}">Add employee</a>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

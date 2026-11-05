@@ -1,0 +1,120 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Duty report | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ report.station.name }} · {{ report.station.code }}</p>
+        <h1>Duty report</h1>
+        <p class="dashboard-subtitle">{{ report.report_date|date:"l, j F Y" }} · {{ report.shift.name }}</p>
+    </div>
+    <span class="status-pill {% if report.status == 'approved' %}status-active{% elif report.status == 'correction_requested' %}status-suspended{% else %}role-pill{% endif %}">{{ report.get_status_display }}</span>
+</section>
+
+<section class="panel">
+    <div class="station-metrics">
+        <div><strong>{{ report.employee.user.get_full_name|default:report.employee.user.username }}</strong><span>DSMS staff</span></div>
+        <div><strong>{{ report.shift.start_time|time:"g:i A" }}–{{ report.shift.end_time|time:"g:i A" }}</strong><span>Shift hours</span></div>
+        <div><strong>{{ report.created_at|date:"j M Y, g:i A" }}</strong><span>Created</span></div>
+        {% if report.submitted_at %}<div><strong>{{ report.submitted_at|date:"j M Y, g:i A" }}</strong><span>Submitted</span></div>{% endif %}
+    </div>
+    {% if report.notes %}
+        <hr>
+        <h2 class="h5">Shift notes</h2>
+        <p class="mb-0">{{ report.notes|linebreaksbr }}</p>
+    {% endif %}
+    <hr>
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Fuel sales</p>
+            <h2 class="h4">Nozzle readings</h2>
+        </div>
+        {% if can_edit %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:report-fuel-entries' report.pk %}">Manage readings</a>
+        {% endif %}
+    </div>
+    {% if fuel_entries %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead>
+                    <tr><th>Nozzle / fuel</th><th>Opening</th><th>Closing</th><th>Metered L</th><th>Testing L</th><th>Sale L</th><th>Price / L</th><th>Fuel sales</th></tr>
+                </thead>
+                <tbody>
+                    {% for entry in fuel_entries %}
+                        <tr>
+                            <td><strong>{{ entry.nozzle.code }}</strong><span class="table-secondary">{{ entry.nozzle.tank.fuel_type.name }}</span></td>
+                            <td>{{ entry.opening_reading|floatformat:3 }}</td>
+                            <td>{{ entry.closing_reading|floatformat:3 }}</td>
+                            <td>{{ entry.metered_litres|floatformat:3 }}</td>
+                            <td>{{ entry.testing_litres|floatformat:3 }}</td>
+                            <td>{{ entry.actual_sale_litres|floatformat:3 }}</td>
+                            <td>₹{{ entry.price_per_litre|floatformat:2 }}</td>
+                            <td>₹{{ entry.sale_amount|floatformat:2 }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th colspan="5">Total fuel sales</th>
+                        <th>{{ total_sale_litres|floatformat:3 }} L</th>
+                        <th></th>
+                        <th>₹{{ total_fuel_sales|floatformat:2 }}</th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-secondary">No nozzle readings have been recorded yet.</p>
+    {% endif %}
+    <hr>
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Lubricants</p>
+            <h2 class="h4">Product sales</h2>
+        </div>
+        {% if can_edit %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:report-lubricant-entries' report.pk %}">Manage lubricant sales</a>
+        {% endif %}
+    </div>
+    {% if lubricant_entries %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead>
+                    <tr><th>Product</th><th>Quantity</th><th>Unit price</th><th>Sales</th></tr>
+                </thead>
+                <tbody>
+                    {% for entry in lubricant_entries %}
+                        <tr>
+                            <td><strong>{{ entry.lubricant.name }}</strong><span class="table-secondary">{{ entry.lubricant.code }}</span></td>
+                            <td>{{ entry.quantity|floatformat:3 }} {{ entry.lubricant.unit }}</td>
+                            <td>₹{{ entry.unit_price|floatformat:2 }}</td>
+                            <td>₹{{ entry.sale_amount|floatformat:2 }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr><th colspan="3">Lubricant sales</th><th>₹{{ total_lubricant_sales|floatformat:2 }}</th></tr>
+                </tfoot>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-secondary">No lubricant sales have been recorded.</p>
+    {% endif %}
+    <section class="panel mt-3">
+        <p class="eyebrow">Total duty sales</p>
+        <p class="h3 mb-0">₹{{ total_duty_sales|floatformat:2 }}</p>
+        <p class="text-secondary mb-0">Fuel ₹{{ total_fuel_sales|floatformat:2 }} + lubricants ₹{{ total_lubricant_sales|floatformat:2 }}</p>
+    </section>
+    <div class="form-actions">
+        <a class="btn btn-outline-secondary" href="{% url 'duties:report-list' %}">Back to reports</a>
+        {% if can_edit %}
+            <a class="btn btn-outline-primary" href="{% url 'duties:report-update' report.pk %}">Edit draft</a>
+            <form method="post" action="{% url 'duties:report-submit' report.pk %}">
+                {% csrf_token %}
+                <button class="btn btn-primary" type="submit">Submit for verification</button>
+            </form>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
