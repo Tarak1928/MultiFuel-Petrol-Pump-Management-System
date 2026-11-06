@@ -1,0 +1,44 @@
+{% extends "accounts/dashboard_base.html" %}
+
+{% block title %}Notifications | MultiFuel{% endblock %}
+{% block dashboard_eyebrow %}Updates{% endblock %}
+{% block dashboard_title %}Notifications{% endblock %}
+{% block dashboard_subtitle %}Workflow updates for your MultiFuel account.{% endblock %}
+
+{% block dashboard_content %}
+<section class="panel">
+    <div class="panel-heading">
+        <div><p class="eyebrow">Inbox</p><h2>Recent updates</h2></div>
+        <form method="post" action="{% url 'notifications:mark-all-read' %}">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Mark all as read</button>
+        </form>
+    </div>
+    {% if notifications %}
+        <div class="list-group list-group-flush">
+            {% for notification in notifications %}
+                <article class="list-group-item px-0 {% if not notification.is_read %}fw-semibold{% endif %}">
+                    <div class="d-flex justify-content-between gap-3">
+                        <div>
+                            <h3 class="h6 mb-1">{{ notification.title }}</h3>
+                            <p class="mb-1">{{ notification.message }}</p>
+                            <small class="text-secondary">{{ notification.created_at|date:"j M Y, g:i a" }}
+                                {% if notification.email_status == "failed" %} · Email delivery failed{% elif notification.email_status == "sent" %} · Email sent{% elif notification.email_status == "pending" %} · Email queued{% endif %}
+                            </small>
+                        </div>
+                        {% if notification.url %}
+                            <form method="post" action="{% url 'notifications:mark-read' notification.pk %}">
+                                {% csrf_token %}
+                                <button class="btn btn-sm btn-outline-primary" type="submit">Open</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state"><h3>You’re all caught up</h3><p>Important workflow updates will appear here.</p></div>
+    {% endif %}
+    <p class="text-secondary small mt-3 mb-0">Email delivery uses the configured Django email settings.</p>
+</section>
+{% endblock %}

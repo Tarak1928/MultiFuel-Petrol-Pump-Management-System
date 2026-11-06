@@ -9,7 +9,11 @@
         <h1>Employees and assignments</h1>
         <p class="dashboard-subtitle">Create employee profiles for accounts approved by you and assign their station access.</p>
     </div>
-    <a class="btn btn-primary" href="{% url 'employees:employee-create' %}">Add employee</a>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="{% url 'employees:attendance-list' %}">Attendance</a>
+        <a class="btn btn-outline-secondary" href="{% url 'employees:payroll-list' %}">Payroll</a>
+        <a class="btn btn-primary" href="{% url 'employees:employee-create' %}">Add employee</a>
+    </div>
 </section>
 
 <section class="panel">
@@ -20,6 +24,7 @@
                     <tr>
                         <th>Employee</th>
                         <th>Role</th>
+                        <th>Basic salary</th>
                         <th>Station access</th>
                         <th>Status</th>
                         <th class="text-end">Actions</th>
@@ -33,6 +38,7 @@
                                 <span class="table-secondary">{{ employee.employee_code }} · {{ employee.phone|default:employee.user.email|default:"No contact" }}</span>
                             </td>
                             <td><span class="role-pill">{{ employee.user.get_role_display }}</span></td>
+                            <td>₹{{ employee.basic_salary|floatformat:2 }}</td>
                             <td>
                                 {% if employee.user.role == "DSMS" %}
                                     {{ employee.assigned_station|default:"No station assigned" }}

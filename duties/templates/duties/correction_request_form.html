@@ -1,0 +1,31 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Request corrections | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ report.station.name }} · {{ report.shift.name }}</p>
+        <h1>Request report corrections</h1>
+        <p class="dashboard-subtitle">{{ report.report_date|date:"j F Y" }} · Tell the DSMS what needs to be corrected.</p>
+    </div>
+</section>
+
+<section class="panel">
+    <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+            <div class="mb-3">
+                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+            </div>
+        {% endfor %}
+        <div class="form-actions">
+            <a class="btn btn-outline-secondary" href="{% url 'duties:report-detail' report.pk %}">Cancel</a>
+            <button class="btn btn-primary" type="submit">Send correction request</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

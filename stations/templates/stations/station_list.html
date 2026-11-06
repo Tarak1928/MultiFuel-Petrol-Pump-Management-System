@@ -48,9 +48,14 @@
                                 <div class="station-actions">
                                     <a class="btn btn-sm btn-outline-secondary" href="{% url 'stations:station-update' station.pk %}">Edit</a>
                                     <a class="btn btn-sm btn-outline-primary" href="{% url 'fuel:station-fuel' station.pk %}">Fuel setup</a>
+                                    <a class="btn btn-sm btn-outline-primary" href="{% url 'fuel:station-inventory' station.pk %}">Fuel inventory</a>
                                     <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:shift-list' station.pk %}">Shifts</a>
                                     <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:lubricant-list' station.pk %}">Lubricants</a>
                                     <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:reconciliation-settings' station.pk %}">Reconciliation</a>
+                                    <a class="btn btn-sm btn-outline-primary" href="{% url 'credits:customer-list' station.pk %}">Credit customers</a>
+                                    <a class="btn btn-sm btn-outline-primary" href="{% url 'credits:overdue-report' station.pk %}">Overdue credit</a>
+                                    <a class="btn btn-sm btn-outline-primary" href="{% url 'expenses:expense-list' %}?station={{ station.pk }}">Expenses</a>
+                                    <a class="btn btn-sm btn-outline-primary" href="{% url 'expenses:accounting-report' %}?station={{ station.pk }}">Accounting</a>
                                     <form method="post" action="{% url 'stations:station-toggle-status' station.pk %}">
                                         {% csrf_token %}
                                         {% if station.is_active %}

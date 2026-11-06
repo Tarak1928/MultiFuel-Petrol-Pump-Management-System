@@ -7,6 +7,7 @@ app_name = "duties"
 
 urlpatterns = [
     path("", views.report_list, name="report-list"),
+    path("review/", views.report_review_queue, name="report-review-queue"),
     path("new/", views.report_create, name="report-create"),
     path(
         "<int:report_id>/fuel-entries/",
@@ -26,6 +27,21 @@ urlpatterns = [
     path("<int:report_id>/", views.report_detail, name="report-detail"),
     path("<int:report_id>/edit/", views.report_update, name="report-update"),
     path("<int:report_id>/submit/", views.report_submit, name="report-submit"),
+    path(
+        "<int:report_id>/verification/start/",
+        views.report_verification_start,
+        name="report-verification-start",
+    ),
+    path(
+        "<int:report_id>/approve/",
+        views.report_approve,
+        name="report-approve",
+    ),
+    path(
+        "<int:report_id>/correction-request/",
+        views.report_request_correction,
+        name="report-request-correction",
+    ),
     path(
         "stations/<int:station_id>/shifts/",
         views.shift_list,

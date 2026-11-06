@@ -1,0 +1,43 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}{{ page_title }} | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ station.name }} · {{ station.code }}</p>
+        <h1>{{ page_title }}</h1>
+        <p class="dashboard-subtitle">Customer credit terms are enforced when credit fuel sales are recorded.</p>
+    </div>
+</section>
+
+<section class="panel">
+    <form method="post">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+        <div class="row g-3">
+            {% for field in form %}
+                {% if field.name != "is_active" %}
+                    <div class="col-md-6">
+                        <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                        {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+        {% if form.is_active %}
+            <div class="form-check mt-3">
+                {{ form.is_active }}
+                <label class="form-check-label" for="{{ form.is_active.id_for_label }}">Customer is active</label>
+                {% for error in form.is_active.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+            </div>
+        {% endif %}
+        <div class="form-actions">
+            {% if customer %}<a class="btn btn-outline-secondary" href="{% url 'credits:customer-detail' customer.pk %}">Cancel</a>{% else %}<a class="btn btn-outline-secondary" href="{% url 'credits:customer-list' station.pk %}">Cancel</a>{% endif %}
+            <button class="btn btn-primary" type="submit">{{ submit_label }}</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

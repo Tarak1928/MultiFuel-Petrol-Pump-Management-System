@@ -74,7 +74,25 @@
         <h2>Fuel operations</h2>
         <p>Manage shift schedules for each station and review submitted duty reports.</p>
         <a class="btn btn-outline-primary w-100 mb-2" href="{% url 'duties:report-list' %}">View duty reports</a>
+        <a class="btn btn-primary w-100 mb-2" href="{% url 'duties:report-review-queue' %}">Review submissions ({{ pending_report_count }})</a>
         <a class="btn btn-outline-secondary w-100" href="{% url 'stations:station-list' %}">Configure station shifts</a>
+    </section>
+    <section class="panel setup-panel">
+        <p class="eyebrow">People and payroll</p>
+        <h2>Staff records</h2>
+        <p>Track attendance, review leave, issue advances, and generate monthly payslips.</p>
+        <a class="btn btn-outline-primary w-100 mb-2" href="{% url 'employees:attendance-list' %}">Attendance</a>
+        <a class="btn btn-outline-primary w-100 mb-2" href="{% url 'employees:leave-list' %}">Leave requests</a>
+        <a class="btn btn-primary w-100 mb-2" href="{% url 'employees:payroll-list' %}">Payroll</a>
+        <a class="btn btn-outline-secondary w-100" href="{% url 'employees:advance-list' %}">Employee advances</a>
+    </section>
+    <section class="panel setup-panel">
+        <p class="eyebrow">Finance</p>
+        <h2>Expenses and accounting</h2>
+        <p>Review station expense requests and compare approved sales with expenses.</p>
+        <a class="btn btn-outline-primary w-100 mb-2" href="{% url 'expenses:expense-list' %}">Manage expenses</a>
+        <a class="btn btn-primary w-100" href="{% url 'expenses:accounting-report' %}">Accounting report</a>
+        <a class="btn btn-outline-secondary w-100 mt-2" href="{% url 'reports:analytics' %}">Analytics and exports</a>
     </section>
 </div>
 {% endblock %}

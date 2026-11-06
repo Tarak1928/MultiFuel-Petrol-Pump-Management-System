@@ -1,0 +1,63 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Payslip {{ payroll.year }}-{{ payroll.month|stringformat:"02d" }} | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading no-print">
+    <div>
+        <p class="eyebrow">Payroll statement</p>
+        <h1>{{ payroll.employee.user.get_full_name|default:payroll.employee.user.username }}</h1>
+        <p class="dashboard-subtitle">Pay period: {{ payroll.year }}-{{ payroll.month|stringformat:"02d" }} · {{ payroll.employee.employee_code }}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" type="button" onclick="window.print()">Print payslip</button>
+        <a class="btn btn-outline-secondary" href="{% url 'employees:payroll-list' %}">Back to payroll</a>
+    </div>
+</section>
+
+<section class="panel payslip-panel">
+    <div class="panel-heading">
+        <div><p class="eyebrow">{{ payroll.employee.owner.get_full_name|default:payroll.employee.owner.username }}</p><h2>Monthly payslip</h2></div>
+        <span class="role-pill">{{ payroll.get_status_display }}</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table">
+            <tbody>
+                <tr><th>Employee</th><td>{{ payroll.employee.user.get_full_name|default:payroll.employee.user.username }}</td></tr>
+                <tr><th>Employee code</th><td>{{ payroll.employee.employee_code }}</td></tr>
+                <tr><th>Pay period</th><td>{{ payroll.year }}-{{ payroll.month|stringformat:"02d" }}</td></tr>
+                <tr><th>Basic salary</th><td>₹{{ payroll.basic_salary|floatformat:2 }}</td></tr>
+                <tr><th>Allowances</th><td>₹{{ payroll.allowances|floatformat:2 }}</td></tr>
+                <tr><th>Overtime</th><td>{{ payroll.overtime_hours }} h × ₹{{ payroll.overtime_rate|floatformat:2 }} = ₹{{ payroll.overtime_amount|floatformat:2 }}</td></tr>
+                <tr class="table-light"><th>Gross pay</th><td><strong>₹{{ payroll.gross_pay|floatformat:2 }}</strong></td></tr>
+                <tr><th>Other deductions</th><td>₹{{ payroll.other_deductions|floatformat:2 }}</td></tr>
+                <tr><th>Advance repayments</th><td>₹{{ payroll.advance_deduction|floatformat:2 }}</td></tr>
+                <tr class="table-light"><th>Net pay</th><td><strong>₹{{ payroll.net_pay|floatformat:2 }}</strong></td></tr>
+            </tbody>
+        </table>
+    </div>
+    {% if payroll.advance_repayments.all %}
+        <h3 class="h6 mt-4">Advance repayment allocation</h3>
+        <ul>
+            {% for repayment in payroll.advance_repayments.all %}
+                <li>{{ repayment.advance.reference }} — ₹{{ repayment.amount|floatformat:2 }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+    {% if user.role == "OWNER" and payroll.status == "unpaid" %}
+        <form class="no-print mt-4" method="post" action="{% url 'employees:payroll-mark-paid' payroll.pk %}">
+            {% csrf_token %}
+            <button class="btn btn-primary" type="submit">Mark as paid</button>
+        </form>
+    {% elif payroll.paid_at %}
+        <p class="form-text mt-3">Paid on {{ payroll.paid_at|date:"j M Y, H:i" }}.</p>
+    {% endif %}
+</section>
+<style>
+    @media print {
+        .site-header, .no-print, .message-stack { display: none !important; }
+        .page-shell { max-width: 100%; margin: 0; padding: 0; }
+        .payslip-panel { border: 0; box-shadow: none; }
+    }
+</style>
+{% endblock %}

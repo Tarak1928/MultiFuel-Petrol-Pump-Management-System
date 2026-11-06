@@ -3,7 +3,6 @@ import uuid
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
-from django.db.models import Sum
 from django.forms import BaseInlineFormSet, inlineformset_factory
 
 from fuel.models import Nozzle
@@ -138,6 +137,17 @@ class DutyReportCreateForm(DutyReportForm):
     )
 
 
+class DutyReportCorrectionForm(forms.Form):
+    reason = forms.CharField(
+        min_length=5,
+        max_length=1000,
+        widget=forms.Textarea(
+            attrs={"class": "form-control", "rows": 4, "maxlength": 1000}
+        ),
+        help_text="Explain what needs to be corrected so the DSMS can update the report.",
+    )
+
+
 class DutyFuelEntryForm(forms.ModelForm):
     nozzle = forms.ModelChoiceField(
         queryset=Nozzle.objects.none(),
@@ -168,10 +178,26 @@ class DutyFuelEntryForm(forms.ModelForm):
         ),
         initial=0,
     )
+    testing_returned_litres = forms.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "form-control", "min": "0", "step": "0.001"}
+        ),
+        initial=0,
+        help_text="Returned testing fuel is added back to tank stock.",
+    )
 
     class Meta:
         model = DutyFuelEntry
-        fields = ("nozzle", "opening_reading", "closing_reading", "testing_litres")
+        fields = (
+            "nozzle",
+            "opening_reading",
+            "closing_reading",
+            "testing_litres",
+            "testing_returned_litres",
+        )
 
     def __init__(self, station, report, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -191,6 +217,17 @@ class DutyFuelEntryForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        testing_litres = cleaned_data.get("testing_litres")
+        returned_litres = cleaned_data.get("testing_returned_litres")
+        if (
+            testing_litres is not None
+            and returned_litres is not None
+            and returned_litres > testing_litres
+        ):
+            self.add_error(
+                "testing_returned_litres",
+                "Returned testing fuel cannot exceed testing litres.",
+            )
         nozzle = cleaned_data.get("nozzle")
         if not nozzle:
             return cleaned_data
@@ -258,7 +295,13 @@ DutyFuelEntryFormSet = inlineformset_factory(
     DutyFuelEntry,
     form=DutyFuelEntryForm,
     formset=BaseDutyFuelEntryFormSet,
-    fields=("nozzle", "opening_reading", "closing_reading", "testing_litres"),
+    fields=(
+        "nozzle",
+        "opening_reading",
+        "closing_reading",
+        "testing_litres",
+        "testing_returned_litres",
+    ),
     extra=1,
     can_delete=True,
     max_num=50,
@@ -454,9 +497,6 @@ class PaymentCollectionForm(forms.ModelForm):
             "upi",
             "debit_card",
             "credit_card",
-            "credit_sales",
-            "advances",
-            "otp",
             "expenses",
             "expense_notes",
         )
@@ -468,15 +508,6 @@ class PaymentCollectionForm(forms.ModelForm):
                 attrs={"class": "form-control", "min": "0", "step": "0.01"}
             ),
             "credit_card": forms.NumberInput(
-                attrs={"class": "form-control", "min": "0", "step": "0.01"}
-            ),
-            "credit_sales": forms.NumberInput(
-                attrs={"class": "form-control", "min": "0", "step": "0.01"}
-            ),
-            "advances": forms.NumberInput(
-                attrs={"class": "form-control", "min": "0", "step": "0.01"}
-            ),
-            "otp": forms.NumberInput(
                 attrs={"class": "form-control", "min": "0", "step": "0.01"}
             ),
             "expenses": forms.NumberInput(
@@ -506,21 +537,6 @@ class PaymentCollectionForm(forms.ModelForm):
             self.fields[field_name].widget.attrs.update(
                 {"class": "form-control", "min": "0", "step": "1"}
             )
-
-    def clean(self):
-        cleaned_data = super().clean()
-        credit_sales = cleaned_data.get("credit_sales")
-        if credit_sales is not None:
-            sales_total = (
-                self.report.fuel_entries.aggregate(total=Sum("sale_amount"))["total"]
-                or 0
-            ) + (
-                self.report.lubricant_entries.aggregate(total=Sum("sale_amount"))["total"]
-                or 0
-            )
-            if credit_sales > sales_total:
-                self.add_error("credit_sales", "Credit sales cannot exceed total duty sales.")
-        return cleaned_data
 
     def save(self, commit=True):
         collection = super().save(commit=False)

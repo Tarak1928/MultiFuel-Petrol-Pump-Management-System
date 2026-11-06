@@ -1,0 +1,51 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Leave | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">People operations</p>
+        <h1>Leave requests</h1>
+        <p class="dashboard-subtitle">Staff can request leave; Owners and assigned Managers record a decision and review note.</p>
+    </div>
+    {% if can_request %}<a class="btn btn-primary" href="{% url 'employees:leave-request-create' %}">Request leave</a>{% endif %}
+</section>
+
+<section class="panel">
+    {% if leave_requests %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead><tr><th>Employee</th><th>Leave</th><th>Dates</th><th>Reason</th><th>Status / review</th>{% if can_review %}<th>Decision</th>{% endif %}</tr></thead>
+                <tbody>
+                    {% for request in leave_requests %}
+                        <tr>
+                            <td><strong>{{ request.employee.user.get_full_name|default:request.employee.user.username }}</strong><span class="table-secondary">{{ request.employee.employee_code }}</span></td>
+                            <td>{{ request.get_leave_type_display }}</td>
+                            <td>{{ request.start_date|date:"j M Y" }} – {{ request.end_date|date:"j M Y" }}</td>
+                            <td>{{ request.reason }}</td>
+                            <td><span class="role-pill">{{ request.get_status_display }}</span>{% if request.review_note %}<span class="table-secondary">{{ request.review_note }}</span>{% endif %}</td>
+                            {% if can_review %}
+                                <td>
+                                    {% if request.status == "pending" %}
+                                        <form method="post" action="{% url 'employees:leave-request-decide' request.pk %}" class="d-grid gap-2">
+                                            {% csrf_token %}
+                                            <input class="form-control form-control-sm" name="review_note" maxlength="500" placeholder="Decision note" required>
+                                            <div class="d-flex gap-1">
+                                                <button class="btn btn-sm btn-primary" name="action" value="approve" type="submit">Approve</button>
+                                                <button class="btn btn-sm btn-outline-danger" name="action" value="reject" type="submit">Reject</button>
+                                            </div>
+                                        </form>
+                                    {% else %}{{ request.reviewed_by.get_full_name|default:request.reviewed_by.username }}{% endif %}
+                                </td>
+                            {% endif %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state"><h3>No leave requests</h3><p>Submitted requests and their decisions will appear here.</p></div>
+    {% endif %}
+</section>
+{% endblock %}

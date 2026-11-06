@@ -9,7 +9,7 @@
         <h1>Duty report</h1>
         <p class="dashboard-subtitle">{{ report.report_date|date:"l, j F Y" }} · {{ report.shift.name }}</p>
     </div>
-    <span class="status-pill {% if report.status == 'approved' %}status-active{% elif report.status == 'correction_requested' %}status-suspended{% else %}role-pill{% endif %}">{{ report.get_status_display }}</span>
+    <span class="status-pill {% if report.status == 'approved' %}status-active{% elif report.status == 'correction_requested' %}status-suspended{% elif report.status == 'pending_verification' or report.status == 'resubmitted' %}status-review{% else %}role-pill{% endif %}">{{ report.get_status_display }}</span>
 </section>
 
 <section class="panel">
@@ -23,6 +23,23 @@
         <hr>
         <h2 class="h5">Shift notes</h2>
         <p class="mb-0">{{ report.notes|linebreaksbr }}</p>
+    {% endif %}
+    {% if review_history %}
+        <hr>
+        <h2 class="h5">Approval and correction history</h2>
+        <ol class="mb-0">
+            {% for review in review_history %}
+                <li class="mb-2">
+                    <strong>{{ review.get_action_display }}</strong>
+                    · {{ review.actor.get_full_name|default:review.actor.username }}
+                    · {{ review.created_at|date:"j M Y, g:i A" }}
+                    <span class="text-secondary">
+                        ({{ review.get_from_status_display }} → {{ review.get_to_status_display }})
+                    </span>
+                    {% if review.notes %}<div>{{ review.notes|linebreaksbr }}</div>{% endif %}
+                </li>
+            {% endfor %}
+        </ol>
     {% endif %}
     <hr>
     <div class="panel-heading">
@@ -38,7 +55,7 @@
         <div class="table-responsive">
             <table class="table align-middle staff-table">
                 <thead>
-                    <tr><th>Nozzle / fuel</th><th>Opening</th><th>Closing</th><th>Metered L</th><th>Testing L</th><th>Sale L</th><th>Price / L</th><th>Fuel sales</th></tr>
+                    <tr><th>Nozzle / fuel</th><th>Opening</th><th>Closing</th><th>Metered L</th><th>Testing L</th><th>Testing returned L</th><th>Sale L</th><th>Price / L</th><th>Fuel sales</th></tr>
                 </thead>
                 <tbody>
                     {% for entry in fuel_entries %}
@@ -48,6 +65,7 @@
                             <td>{{ entry.closing_reading|floatformat:3 }}</td>
                             <td>{{ entry.metered_litres|floatformat:3 }}</td>
                             <td>{{ entry.testing_litres|floatformat:3 }}</td>
+                            <td>{{ entry.testing_returned_litres|floatformat:3 }}</td>
                             <td>{{ entry.actual_sale_litres|floatformat:3 }}</td>
                             <td>₹{{ entry.price_per_litre|floatformat:2 }}</td>
                             <td>₹{{ entry.sale_amount|floatformat:2 }}</td>
@@ -56,7 +74,7 @@
                 </tbody>
                 <tfoot>
                     <tr>
-                        <th colspan="5">Total fuel sales</th>
+                        <th colspan="6">Total fuel sales</th>
                         <th>{{ total_sale_litres|floatformat:3 }} L</th>
                         <th></th>
                         <th>₹{{ total_fuel_sales|floatformat:2 }}</th>
@@ -115,6 +133,11 @@
         {% if can_edit_collection %}
             <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:report-payment-collection' report.pk %}">{% if collection %}Edit collections{% else %}Record collections{% endif %}</a>
         {% endif %}
+        {% if can_edit %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'credits:report-credit-sale-create' report.pk %}">Record credit sale</a>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'credits:report-advance-list' report.pk %}">Advances</a>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'credits:report-otp-list' report.pk %}">OTP transactions</a>
+        {% endif %}
         {% if can_authorize_adjustments %}
             <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:reconciliation-adjustment-create' report.pk %}">Authorize adjustment</a>
         {% endif %}
@@ -127,9 +150,9 @@
                     <tr><th>UPI</th><td>₹{{ collection.upi|floatformat:2 }}</td></tr>
                     <tr><th>Debit card</th><td>₹{{ collection.debit_card|floatformat:2 }}</td></tr>
                     <tr><th>Credit card</th><td>₹{{ collection.credit_card|floatformat:2 }}</td></tr>
-                    <tr><th>Credit sales (not collected)</th><td>₹{{ collection.credit_sales|floatformat:2 }}</td></tr>
-                    <tr><th>Advances applied</th><td>₹{{ collection.advances|floatformat:2 }}{% if reconciliation_settings and not reconciliation_settings.include_advances %} <span class="text-secondary">(excluded by station policy)</span>{% endif %}</td></tr>
-                    <tr><th>OTP transactions</th><td>₹{{ collection.otp|floatformat:2 }}{% if reconciliation_settings and not reconciliation_settings.include_otp %} <span class="text-secondary">(excluded by station policy)</span>{% endif %}</td></tr>
+                    <tr><th>Credit sales (not collected)</th><td>₹{{ collection.credit_sales_total|floatformat:2 }}</td></tr>
+                    <tr><th>Advances applied</th><td>₹{{ collection.advances_total|floatformat:2 }}{% if reconciliation_settings and not reconciliation_settings.include_advances %} <span class="text-secondary">(excluded by station policy)</span>{% endif %}</td></tr>
+                    <tr><th>OTP transactions</th><td>₹{{ collection.otp_total|floatformat:2 }}{% if reconciliation_settings and not reconciliation_settings.include_otp %} <span class="text-secondary">(excluded by station policy)</span>{% endif %}</td></tr>
                     <tr><th>Expenses recorded separately</th><td>₹{{ collection.expenses|floatformat:2 }}{% if collection.expense_notes %}<span class="table-secondary">{{ collection.expense_notes }}</span>{% endif %}</td></tr>
                 </tbody>
                 <tfoot>
@@ -157,6 +180,25 @@
     {% else %}
         <p class="text-secondary">Collection details have not been recorded. Reconciliation is not available yet.</p>
     {% endif %}
+    {% if credit_sales %}
+        <h3 class="h6 mt-3">Customer credit sales</h3>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle staff-table">
+                <thead><tr><th>Customer / vehicle</th><th>Fuel</th><th>Litres</th><th>Amount</th><th>Due</th></tr></thead>
+                <tbody>
+                    {% for sale in credit_sales %}
+                        <tr>
+                            <td><strong>{{ sale.customer.name }}</strong><span class="table-secondary">{{ sale.vehicle_number|default:"—" }}</span></td>
+                            <td>{{ sale.fuel_type.name }}</td>
+                            <td>{{ sale.litres|floatformat:3 }}</td>
+                            <td>₹{{ sale.sale_amount|floatformat:2 }}</td>
+                            <td>{{ sale.due_date|date:"j M Y" }}{% if can_edit %}<span class="table-secondary"><a href="{% url 'credits:credit-sale-update' sale.pk %}">Edit</a></span>{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
     {% if adjustments %}
         <h3 class="h6 mt-3">Authorized adjustment history</h3>
         <div class="table-responsive">
@@ -177,11 +219,24 @@
     {% endif %}
     <div class="form-actions">
         <a class="btn btn-outline-secondary" href="{% url 'duties:report-list' %}">Back to reports</a>
+        {% if can_start_verification %}
+            <form method="post" action="{% url 'duties:report-verification-start' report.pk %}">
+                {% csrf_token %}
+                <button class="btn btn-primary" type="submit">Start verification</button>
+            </form>
+        {% endif %}
+        {% if can_review_report %}
+            <form method="post" action="{% url 'duties:report-approve' report.pk %}">
+                {% csrf_token %}
+                <button class="btn btn-success" type="submit">Approve report</button>
+            </form>
+            <a class="btn btn-outline-danger" href="{% url 'duties:report-request-correction' report.pk %}">Request correction</a>
+        {% endif %}
         {% if can_edit %}
-            <a class="btn btn-outline-primary" href="{% url 'duties:report-update' report.pk %}">Edit draft</a>
+            <a class="btn btn-outline-primary" href="{% url 'duties:report-update' report.pk %}">{% if report.status == "correction_requested" %}Edit corrections{% else %}Edit draft{% endif %}</a>
             <form method="post" action="{% url 'duties:report-submit' report.pk %}">
                 {% csrf_token %}
-                <button class="btn btn-primary" type="submit">Submit for verification</button>
+                <button class="btn btn-primary" type="submit">{% if report.status == "correction_requested" %}Resubmit for verification{% else %}Submit for verification{% endif %}</button>
             </form>
         {% endif %}
     </div>

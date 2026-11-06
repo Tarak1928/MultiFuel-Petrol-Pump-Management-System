@@ -6,9 +6,16 @@
 <section class="dashboard-heading">
     <div>
         <p class="eyebrow">Operations</p>
-        <h1>Duty reports</h1>
+        <h1>{% if review_queue %}Reports awaiting review{% else %}Duty reports{% endif %}</h1>
         <p class="dashboard-subtitle">Daily reports for stations you are authorized to access.</p>
     </div>
+    {% if user.role == "OWNER" or user.role == "MANAGER" %}
+        {% if review_queue %}
+            <a class="btn btn-outline-secondary" href="{% url 'duties:report-list' %}">All reports</a>
+        {% else %}
+            <a class="btn btn-outline-primary" href="{% url 'duties:report-review-queue' %}">Review submissions</a>
+        {% endif %}
+    {% endif %}
     {% if user.role == "DSMS" %}
         <a class="btn btn-primary" href="{% url 'duties:report-create' %}">Create duty report</a>
     {% endif %}
@@ -28,7 +35,7 @@
                             <td>{{ report.station.name }}</td>
                             <td>{{ report.employee.user.get_full_name|default:report.employee.user.username }}</td>
                             <td>{{ report.shift.name }}</td>
-                            <td><span class="status-pill {% if report.status == 'approved' %}status-active{% elif report.status == 'correction_requested' %}status-suspended{% else %}role-pill{% endif %}">{{ report.get_status_display }}</span></td>
+                            <td><span class="status-pill {% if report.status == 'approved' %}status-active{% elif report.status == 'correction_requested' %}status-suspended{% elif report.status == 'pending_verification' or report.status == 'resubmitted' %}status-review{% else %}role-pill{% endif %}">{{ report.get_status_display }}</span></td>
                             <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'duties:report-detail' report.pk %}">View report</a></td>
                         </tr>
                     {% endfor %}

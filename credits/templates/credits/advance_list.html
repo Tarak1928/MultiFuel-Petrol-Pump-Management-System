@@ -1,0 +1,48 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Duty advances | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ report.station.name }} · {{ report.shift.name }}</p>
+        <h1>Advances applied</h1>
+        <p class="dashboard-subtitle">{{ report.report_date|date:"j F Y" }} · Applied advances settle sales from previously received funds.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{% url 'duties:report-detail' report.pk %}">Duty report</a>
+</section>
+
+<section class="panel">
+    {% if advances %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead><tr><th>Reference</th><th>Description</th><th>Recorded</th><th class="text-end">Amount</th></tr></thead>
+                <tbody>
+                    {% for advance in advances %}
+                        <tr><td>{{ advance.reference }}</td><td>{{ advance.description|default:"—" }}</td><td>{{ advance.created_at|date:"j M Y, g:i A" }}</td><td class="text-end">₹{{ advance.amount|floatformat:2 }}</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot><tr><th colspan="3">Total advances</th><th class="text-end">₹{{ report.payment_collection.advances_total|floatformat:2 }}</th></tr></tfoot>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-secondary">No advances have been recorded for this report.</p>
+    {% endif %}
+    {% if can_edit %}
+        <hr>
+        <h2 class="h5">Add an advance settlement</h2>
+        <form method="post">
+            {% csrf_token %}
+            {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+            {% for field in form %}
+                <div class="mb-3">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                </div>
+            {% endfor %}
+            <button class="btn btn-primary" type="submit">Record advance</button>
+        </form>
+    {% endif %}
+</section>
+{% endblock %}

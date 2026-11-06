@@ -1,0 +1,39 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Employee advances | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Payroll</p>
+        <h1>Employee advances</h1>
+        <p class="dashboard-subtitle">Outstanding advances are repaid through payroll and are never counted as duty sales.</p>
+    </div>
+    {% if can_issue %}<a class="btn btn-primary" href="{% url 'employees:advance-create' %}">Issue advance</a>{% endif %}
+</section>
+
+<section class="panel">
+    {% if advances %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead><tr><th>Employee</th><th>Reference</th><th>Issued</th><th>Amount</th><th>Repaid</th><th>Outstanding</th><th>Notes</th></tr></thead>
+                <tbody>
+                    {% for advance in advances %}
+                        <tr>
+                            <td><strong>{{ advance.employee.user.get_full_name|default:advance.employee.user.username }}</strong><span class="table-secondary">{{ advance.employee.employee_code }}</span></td>
+                            <td>{{ advance.reference }}</td>
+                            <td>{{ advance.issued_date|date:"j M Y" }}</td>
+                            <td>₹{{ advance.amount|floatformat:2 }}</td>
+                            <td>₹{{ advance.repaid_balance|floatformat:2 }}</td>
+                            <td><strong>₹{{ advance.outstanding_balance|floatformat:2 }}</strong></td>
+                            <td>{{ advance.notes|default:"—" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state"><h3>No employee advances</h3><p>Advances and repayments will appear here.</p></div>
+    {% endif %}
+</section>
+{% endblock %}

@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from accounts.models import User
 from employees.models import Employee, ManagerAssignment
-from fuel.models import FuelPrice, FuelType, Nozzle, Tank
+from fuel.models import FuelPrice, FuelType, InventoryLedger, Nozzle, Tank
 from stations.models import Station
 
 from .models import (
@@ -17,6 +17,7 @@ from .models import (
     DutyFuelEntry,
     DutyLubricantEntry,
     DutyReport,
+    DutyReportReview,
     Lubricant,
     PaymentCollection,
     ReconciliationAdjustment,
@@ -100,6 +101,7 @@ class ShiftAndDutyReportTests(TestCase):
             fuel_type=self.fuel_type,
             code="T-01",
             capacity_litres=10000,
+            current_stock_litres=10000,
         )
         self.nozzle = Nozzle.objects.create(
             station=self.station,
@@ -173,6 +175,7 @@ class ShiftAndDutyReportTests(TestCase):
         opening="1000.000",
         closing="1120.000",
         testing="2.000",
+        returned="0.000",
     ):
         return {
             "fuel_entries-TOTAL_FORMS": "1",
@@ -183,6 +186,7 @@ class ShiftAndDutyReportTests(TestCase):
             "fuel_entries-0-opening_reading": opening,
             "fuel_entries-0-closing_reading": closing,
             "fuel_entries-0-testing_litres": testing,
+            "fuel_entries-0-testing_returned_litres": returned,
         }
 
     def lubricant_entry_data(self, *, product=None, quantity="2.000"):
@@ -363,6 +367,224 @@ class ShiftAndDutyReportTests(TestCase):
             reverse("duties:report-update", args=[report.pk])
         )
         self.assertEqual(edit_response.status_code, 403)
+
+    def test_manager_correction_resubmission_approval_and_audit_history(self):
+        report = self.create_report_with_fuel_sale()
+        entry = DutyLubricantEntry.objects.create(
+            report=report,
+            lubricant=self.lubricant,
+            quantity=Decimal("2.000"),
+            unit_price=Decimal("250.00"),
+        )
+        self.client.force_login(self.dsms)
+        submit_url = reverse("duties:report-submit", args=[report.pk])
+        self.client.post(submit_url)
+        self.lubricant.refresh_from_db()
+        self.assertEqual(self.lubricant.current_stock, Decimal("8.000"))
+
+        self.client.force_login(self.other_manager)
+        queue_response = self.client.get(reverse("duties:report-review-queue"))
+        self.assertEqual(queue_response.status_code, 200)
+        self.assertNotContains(queue_response, "Central Fuel")
+        self.assertEqual(
+            self.client.post(
+                reverse("duties:report-verification-start", args=[report.pk])
+            ).status_code,
+            404,
+        )
+
+        self.client.force_login(self.manager)
+        dashboard = self.client.get(reverse("dashboard-manager"))
+        self.assertEqual(dashboard.context["pending_report_count"], 1)
+        self.assertContains(dashboard, "Review submissions (1)")
+        queue_response = self.client.get(reverse("duties:report-review-queue"))
+        self.assertContains(queue_response, "Central Fuel")
+        self.assertEqual(
+            self.client.post(
+                reverse("duties:report-approve", args=[report.pk])
+            ).status_code,
+            403,
+        )
+        self.client.post(
+            reverse("duties:report-verification-start", args=[report.pk])
+        )
+        report.refresh_from_db()
+        self.assertEqual(report.status, DutyReport.Status.PENDING_VERIFICATION)
+
+        correction_url = reverse(
+            "duties:report-request-correction",
+            args=[report.pk],
+        )
+        invalid_correction = self.client.post(correction_url, {"reason": "No"})
+        self.assertEqual(invalid_correction.status_code, 200)
+        self.assertEqual(
+            set(invalid_correction.context["form"].errors),
+            {"reason"},
+        )
+        self.client.post(
+            correction_url,
+            {"reason": "Please verify the lubricant quantity."},
+        )
+        report.refresh_from_db()
+        self.assertEqual(report.status, DutyReport.Status.CORRECTION_REQUESTED)
+
+        self.client.force_login(self.dsms)
+        entry.quantity = Decimal("3.000")
+        entry.save()
+        self.client.post(submit_url)
+        report.refresh_from_db()
+        self.lubricant.refresh_from_db()
+        self.assertEqual(report.status, DutyReport.Status.RESUBMITTED)
+        self.assertEqual(self.lubricant.current_stock, Decimal("7.000"))
+
+        self.client.force_login(self.manager)
+        approval = self.client.post(
+            reverse("duties:report-approve", args=[report.pk])
+        )
+        self.assertRedirects(
+            approval,
+            reverse("duties:report-detail", args=[report.pk]),
+        )
+        report.refresh_from_db()
+        self.assertEqual(report.status, DutyReport.Status.APPROVED)
+        self.assertEqual(
+            list(
+                report.review_history.values_list(
+                    "action",
+                    "from_status",
+                    "to_status",
+                )
+            ),
+            [
+                (
+                    DutyReportReview.Action.SUBMITTED,
+                    DutyReport.Status.DRAFT,
+                    DutyReport.Status.SUBMITTED,
+                ),
+                (
+                    DutyReportReview.Action.VERIFICATION_STARTED,
+                    DutyReport.Status.SUBMITTED,
+                    DutyReport.Status.PENDING_VERIFICATION,
+                ),
+                (
+                    DutyReportReview.Action.CORRECTION_REQUESTED,
+                    DutyReport.Status.PENDING_VERIFICATION,
+                    DutyReport.Status.CORRECTION_REQUESTED,
+                ),
+                (
+                    DutyReportReview.Action.RESUBMITTED,
+                    DutyReport.Status.CORRECTION_REQUESTED,
+                    DutyReport.Status.RESUBMITTED,
+                ),
+                (
+                    DutyReportReview.Action.APPROVED,
+                    DutyReport.Status.RESUBMITTED,
+                    DutyReport.Status.APPROVED,
+                ),
+            ],
+        )
+        detail = self.client.get(
+            reverse("duties:report-detail", args=[report.pk])
+        )
+        self.assertContains(detail, "Please verify the lubricant quantity.")
+
+        first_review = report.review_history.first()
+        first_review.notes = "Attempted to alter audit history"
+        with self.assertRaises(ValidationError):
+            first_review.save()
+
+        self.client.force_login(self.dsms)
+        self.assertEqual(
+            self.client.get(
+                reverse("duties:report-update", args=[report.pk])
+            ).status_code,
+            403,
+        )
+
+    def test_owner_can_verify_and_approve_only_owned_station_reports(self):
+        report = self.create_report_with_fuel_sale()
+        self.client.force_login(self.dsms)
+        self.client.post(reverse("duties:report-submit", args=[report.pk]))
+
+        self.client.force_login(self.other_owner)
+        self.assertEqual(
+            self.client.post(
+                reverse("duties:report-verification-start", args=[report.pk])
+            ).status_code,
+            404,
+        )
+
+        self.client.force_login(self.owner)
+        self.client.post(
+            reverse("duties:report-verification-start", args=[report.pk])
+        )
+        response = self.client.post(
+            reverse("duties:report-approve", args=[report.pk])
+        )
+        self.assertEqual(response.status_code, 302)
+        report.refresh_from_db()
+        self.assertEqual(report.status, DutyReport.Status.APPROVED)
+        self.assertEqual(report.review_history.last().actor, self.owner)
+
+    def test_approval_posts_sales_and_testing_movements_to_fuel_inventory(self):
+        report = self.create_report(self.employee, self.shift)
+        self.client.force_login(self.dsms)
+        readings = self.client.post(
+            reverse("duties:report-fuel-entries", args=[report.pk]),
+            self.fuel_entry_data(returned="0.500"),
+        )
+        self.assertRedirects(
+            readings,
+            reverse("duties:report-detail", args=[report.pk]),
+        )
+        self.client.post(reverse("duties:report-submit", args=[report.pk]))
+        self.client.force_login(self.manager)
+        self.client.post(
+            reverse("duties:report-verification-start", args=[report.pk])
+        )
+        approval = self.client.post(
+            reverse("duties:report-approve", args=[report.pk])
+        )
+
+        self.assertRedirects(
+            approval,
+            reverse("duties:report-detail", args=[report.pk]),
+        )
+        self.tank.refresh_from_db()
+        self.assertEqual(self.tank.current_stock_litres, Decimal("9880.500"))
+        movements = {
+            entry.transaction_type: entry.quantity_delta
+            for entry in InventoryLedger.objects.filter(report=report)
+        }
+        self.assertEqual(
+            movements,
+            {
+                InventoryLedger.TransactionType.SALE: Decimal("-118.000"),
+                InventoryLedger.TransactionType.TESTING_USE: Decimal("-2.000"),
+                InventoryLedger.TransactionType.TESTING_RETURN: Decimal("0.500"),
+            },
+        )
+
+    def test_report_approval_stays_pending_when_fuel_stock_is_insufficient(self):
+        self.tank.current_stock_litres = Decimal("50.000")
+        self.tank.save(update_fields=("current_stock_litres", "updated_at"))
+        report = self.create_report_with_fuel_sale()
+        self.client.force_login(self.dsms)
+        self.client.post(reverse("duties:report-submit", args=[report.pk]))
+        self.client.force_login(self.manager)
+        self.client.post(
+            reverse("duties:report-verification-start", args=[report.pk])
+        )
+
+        response = self.client.post(
+            reverse("duties:report-approve", args=[report.pk]),
+            follow=True,
+        )
+
+        self.assertContains(response, "fuel stock is insufficient")
+        report.refresh_from_db()
+        self.assertEqual(report.status, DutyReport.Status.PENDING_VERIFICATION)
+        self.assertFalse(InventoryLedger.objects.filter(report=report).exists())
 
     def test_repeated_create_post_with_same_token_is_idempotent(self):
         self.client.force_login(self.dsms)
@@ -787,24 +1009,14 @@ class ShiftAndDutyReportTests(TestCase):
         self.assertContains(detail, "Matched")
         self.assertContains(detail, "Expenses recorded separately")
 
-    def test_credit_sales_reduce_expected_collections_and_cannot_exceed_sales(self):
+    def test_credit_sales_are_not_manually_entered_and_reduce_expected_collections(self):
         report = self.create_report_with_fuel_sale()
         self.client.force_login(self.dsms)
-        response = self.client.post(
+        response = self.client.get(
             reverse("duties:report-payment-collection", args=[report.pk]),
-            {
-                "upi": "10000.00",
-                "debit_card": "0",
-                "credit_card": "0",
-                "credit_sales": "12000.00",
-                "advances": "0",
-                "otp": "0",
-                "expenses": "0",
-            },
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("credit_sales", response.context["form"].errors)
-        self.assertFalse(PaymentCollection.objects.exists())
+        self.assertNotIn("credit_sales", response.context["form"].fields)
 
         collection = PaymentCollection.objects.create(
             report=report,
@@ -816,6 +1028,12 @@ class ShiftAndDutyReportTests(TestCase):
         self.assertEqual(summary["actual_collections"], Decimal("10000.00"))
         self.assertEqual(summary["authorized_adjustments"], Decimal("0.00"))
 
+        other_report = self.create_report_with_fuel_sale()
+        with self.assertRaises(ValidationError):
+            PaymentCollection.objects.create(
+                report=other_report,
+                credit_sales=Decimal("12000.00"),
+            )
     def test_reconciliation_settings_control_inclusions_and_tolerance(self):
         report = self.create_report_with_fuel_sale()
         settings = ReconciliationSettings.objects.create(

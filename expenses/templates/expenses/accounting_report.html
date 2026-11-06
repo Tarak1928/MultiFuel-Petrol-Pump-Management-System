@@ -1,0 +1,71 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Accounting report | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Station accounting</p>
+        <h1>Sales and expense summary</h1>
+        <p class="dashboard-subtitle">Approved duty-report sales less approved expenses for {{ start_date|date:"j M Y" }} to {{ end_date|date:"j M Y" }}.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{% url 'expenses:expense-list' %}">View expenses</a>
+</section>
+
+<section class="panel mb-4">
+    <form method="get" class="d-flex flex-wrap align-items-end gap-2">
+        <div>
+            <label class="form-label" for="station">Station</label>
+            <select class="form-select" id="station" name="station">
+                <option value="">All accessible stations</option>
+                {% for station in stations %}
+                    <option value="{{ station.pk }}" {% if selected_station.pk == station.pk %}selected{% endif %}>{{ station.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div><label class="form-label" for="start_date">From</label><input class="form-control" id="start_date" name="start_date" type="date" value="{{ start_date|date:'Y-m-d' }}"></div>
+        <div><label class="form-label" for="end_date">To</label><input class="form-control" id="end_date" name="end_date" type="date" value="{{ end_date|date:'Y-m-d' }}"></div>
+        <button class="btn btn-primary" type="submit">Update report</button>
+    </form>
+</section>
+
+<section class="dashboard-grid mb-4">
+    <article class="panel"><p class="eyebrow">Fuel sales</p><h2>₹{{ fuel_sales|floatformat:2 }}</h2></article>
+    <article class="panel"><p class="eyebrow">Lubricant sales</p><h2>₹{{ lubricant_sales|floatformat:2 }}</h2></article>
+    <article class="panel"><p class="eyebrow">Approved expenses</p><h2>₹{{ total_expenses|floatformat:2 }}</h2></article>
+    <article class="panel"><p class="eyebrow">Sales less expenses</p><h2>₹{{ net_after_expenses|floatformat:2 }}</h2></article>
+</section>
+
+<section class="panel mb-4">
+    <div class="panel-heading"><div><p class="eyebrow">Station comparison</p><h2>Operating summary</h2></div></div>
+    {% if station_summaries %}
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead><tr><th>Station</th><th>Fuel sales</th><th>Lubricant sales</th><th>Total sales</th><th>Approved expenses</th><th>Sales less expenses</th></tr></thead>
+                <tbody>
+                    {% for summary in station_summaries %}
+                        <tr><td><strong>{{ summary.station.name }}</strong></td><td>₹{{ summary.fuel_sales|floatformat:2 }}</td><td>₹{{ summary.lubricant_sales|floatformat:2 }}</td><td>₹{{ summary.sales|floatformat:2 }}</td><td>₹{{ summary.expenses|floatformat:2 }}</td><td><strong>₹{{ summary.net_after_expenses|floatformat:2 }}</strong></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state"><h3>No accessible stations</h3><p>Station totals will appear after station access is assigned.</p></div>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <div class="panel-heading"><div><p class="eyebrow">Approved spending</p><h2>Expenses by category</h2></div></div>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead><tr><th>Category</th><th>Total</th></tr></thead>
+            <tbody>
+                {% for category in category_totals %}
+                    <tr><td>{{ category.label }}</td><td>₹{{ category.total|floatformat:2 }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="form-text">This is an operating summary, not a full profit statement. It does not deduct fuel-purchase cost or account for tax and other liabilities. Duty-report expense totals are excluded to avoid counting the same expenses twice.</p>
+</section>
+{% endblock %}

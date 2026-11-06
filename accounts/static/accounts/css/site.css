@@ -478,6 +478,11 @@ select:focus {
     color: #5e6862;
 }
 
+.status-review {
+    background: #fff3cd;
+    color: #785d00;
+}
+
 .station-form-panel {
     max-width: 820px;
 }

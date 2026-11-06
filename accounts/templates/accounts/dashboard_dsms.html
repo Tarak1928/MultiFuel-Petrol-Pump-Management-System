@@ -17,6 +17,11 @@
                 <a class="btn btn-primary" href="{% url 'duties:report-create' %}">Create duty report</a>
                 <a class="btn btn-outline-secondary" href="{% url 'duties:report-list' %}">Duty report history</a>
                 <a class="btn btn-outline-secondary" href="{% url 'duties:shift-list' employee.assigned_station.pk %}">Shift schedule</a>
+                <a class="btn btn-outline-secondary" href="{% url 'employees:attendance-list' %}">My attendance</a>
+                <a class="btn btn-outline-secondary" href="{% url 'employees:leave-list' %}">Leave requests</a>
+                <a class="btn btn-outline-secondary" href="{% url 'employees:payroll-list' %}">My payslips</a>
+                <a class="btn btn-outline-secondary" href="{% url 'employees:advance-list' %}">My advances</a>
+                <a class="btn btn-outline-secondary" href="{% url 'expenses:expense-create' %}">Record an expense</a>
             </div>
         </div>
     </section>

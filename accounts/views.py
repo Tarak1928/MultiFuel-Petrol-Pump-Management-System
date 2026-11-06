@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.decorators.http import require_POST
 
+from duties.models import DutyReport
 from .decorators import role_required
 from .forms import (
     ApprovedPasswordResetForm,
@@ -95,6 +96,14 @@ def owner_dashboard(request):
     )
     stations = Station.objects.filter(owner=request.user)
     employee_count = Employee.objects.filter(owner=request.user, is_active=True).count()
+    pending_report_count = DutyReport.objects.filter(
+        station__owner=request.user,
+        status__in=(
+            DutyReport.Status.SUBMITTED,
+            DutyReport.Status.PENDING_VERIFICATION,
+            DutyReport.Status.RESUBMITTED,
+        ),
+    ).count()
     return render(
         request,
         "accounts/dashboard_owner.html",
@@ -103,6 +112,7 @@ def owner_dashboard(request):
             "station_count": stations.count(),
             "active_station_count": stations.filter(is_active=True).count(),
             "employee_count": employee_count,
+            "pending_report_count": pending_report_count,
         },
     )
 
@@ -120,10 +130,27 @@ def manager_dashboard(request):
         if employee
         else []
     )
+    station_ids = (
+        manager_stations.values_list("station_id", flat=True)
+        if employee
+        else []
+    )
+    pending_report_count = DutyReport.objects.filter(
+        station_id__in=station_ids,
+        status__in=(
+            DutyReport.Status.SUBMITTED,
+            DutyReport.Status.PENDING_VERIFICATION,
+            DutyReport.Status.RESUBMITTED,
+        ),
+    ).count()
     return render(
         request,
         "accounts/dashboard_manager.html",
-        {"employee": employee, "manager_stations": manager_stations},
+        {
+            "employee": employee,
+            "manager_stations": manager_stations,
+            "pending_report_count": pending_report_count,
+        },
     )
 
 

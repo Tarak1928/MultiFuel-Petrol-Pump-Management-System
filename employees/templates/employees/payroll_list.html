@@ -1,0 +1,39 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Payroll | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Payroll</p>
+        <h1>Monthly payroll</h1>
+        <p class="dashboard-subtitle">Payslips use the employee's salary snapshot, recorded overtime, allowances, and approved deductions.</p>
+    </div>
+    {% if can_generate %}<a class="btn btn-primary" href="{% url 'employees:payroll-create' %}">Generate payroll</a>{% endif %}
+</section>
+
+<section class="panel">
+    {% if payroll_records %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead><tr>{% if can_generate %}<th>Employee</th>{% endif %}<th>Pay period</th><th>Gross pay</th><th>Deductions</th><th>Net pay</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    {% for payroll in payroll_records %}
+                        <tr>
+                            {% if can_generate %}<td><strong>{{ payroll.employee.user.get_full_name|default:payroll.employee.user.username }}</strong><span class="table-secondary">{{ payroll.employee.employee_code }}</span></td>{% endif %}
+                            <td>{{ payroll.year }}-{{ payroll.month|stringformat:"02d" }}</td>
+                            <td>₹{{ payroll.gross_pay|floatformat:2 }}</td>
+                            <td>₹{{ payroll.other_deductions|floatformat:2 }} + ₹{{ payroll.advance_deduction|floatformat:2 }}</td>
+                            <td><strong>₹{{ payroll.net_pay|floatformat:2 }}</strong></td>
+                            <td><span class="role-pill">{{ payroll.get_status_display }}</span></td>
+                            <td><a class="btn btn-sm btn-outline-primary" href="{% url 'employees:payslip' payroll.pk %}">View payslip</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state"><h3>No payroll records yet</h3><p>Generated monthly payslips will appear here.</p></div>
+    {% endif %}
+</section>
+{% endblock %}

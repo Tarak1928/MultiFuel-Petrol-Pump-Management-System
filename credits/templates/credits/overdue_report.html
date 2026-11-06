@@ -1,0 +1,38 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Overdue credit | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ station.name }} · {{ station.code }}</p>
+        <h1>Overdue credit sales</h1>
+        <p class="dashboard-subtitle">Unpaid customer balances past their due date as of {{ today|date:"j F Y" }}.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{% url 'credits:customer-list' station.pk %}">Credit customers</a>
+</section>
+
+<section class="panel">
+    {% if sales %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead><tr><th>Customer</th><th>Sale date</th><th>Due date</th><th>Amount</th><th>Balance due</th><th></th></tr></thead>
+                <tbody>
+                    {% for sale in sales %}
+                        <tr>
+                            <td>{{ sale.customer.name }}<span class="table-secondary">{{ sale.customer.customer_code }}</span></td>
+                            <td>{{ sale.report.report_date|date:"j M Y" }}</td>
+                            <td>{{ sale.due_date|date:"j M Y" }}</td>
+                            <td>₹{{ sale.sale_amount|floatformat:2 }}</td>
+                            <td>₹{{ sale.balance_due|floatformat:2 }}</td>
+                            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'credits:customer-detail' sale.customer_id %}">Statement</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state"><h2>No overdue balances</h2><p>All recorded customer credit is within its payment terms.</p></div>
+    {% endif %}
+</section>
+{% endblock %}

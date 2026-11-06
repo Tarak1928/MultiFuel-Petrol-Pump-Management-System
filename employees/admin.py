@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import Employee, ManagerAssignment
+from .models import (
+    Attendance,
+    Employee,
+    EmployeeAdvance,
+    LeaveRequest,
+    ManagerAssignment,
+    Payroll,
+    PayrollAdvanceRepayment,
+)
 
 
 class ManagerAssignmentInline(admin.TabularInline):
@@ -56,3 +64,59 @@ class ManagerAssignmentAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return request.user.is_superuser
+
+
+class SuperuserReadOnlyAdmin(admin.ModelAdmin):
+    def has_module_permission(self, request):
+        return request.user.is_superuser
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Attendance)
+class AttendanceAdmin(SuperuserReadOnlyAdmin):
+    list_display = ("employee", "station", "work_date", "status", "overtime_hours")
+    list_filter = ("station", "status", "work_date")
+    search_fields = ("employee__employee_code", "employee__user__username")
+
+
+@admin.register(LeaveRequest)
+class LeaveRequestAdmin(SuperuserReadOnlyAdmin):
+    list_display = ("employee", "leave_type", "start_date", "end_date", "status")
+    list_filter = ("status", "leave_type")
+    search_fields = ("employee__employee_code", "employee__user__username")
+
+
+@admin.register(EmployeeAdvance)
+class EmployeeAdvanceAdmin(SuperuserReadOnlyAdmin):
+    list_display = ("employee", "reference", "amount", "issued_date")
+    search_fields = ("employee__employee_code", "reference")
+
+
+@admin.register(Payroll)
+class PayrollAdmin(SuperuserReadOnlyAdmin):
+    list_display = (
+        "employee",
+        "year",
+        "month",
+        "gross_pay",
+        "net_pay",
+        "status",
+    )
+    list_filter = ("year", "month", "status")
+    search_fields = ("employee__employee_code", "employee__user__username")
+
+
+@admin.register(PayrollAdvanceRepayment)
+class PayrollAdvanceRepaymentAdmin(SuperuserReadOnlyAdmin):
+    list_display = ("payroll", "advance", "amount")

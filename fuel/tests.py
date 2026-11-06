@@ -1,12 +1,25 @@
+from datetime import date
+from decimal import Decimal
+from datetime import timedelta
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import User
+from employees.models import Employee, ManagerAssignment
 from stations.models import Station
 
-from .models import FuelPrice, FuelType, Nozzle, Tank
+from .models import (
+    FuelDelivery,
+    FuelInventoryAdjustment,
+    FuelPrice,
+    FuelType,
+    InventoryLedger,
+    Nozzle,
+    Tank,
+)
 
 
 class FuelSetupTests(TestCase):
@@ -124,6 +137,214 @@ class FuelSetupTests(TestCase):
         tank = Tank.objects.get(station=self.station)
         self.assertEqual(tank.code, "T-01")
         self.assertEqual(tank.current_stock_litres, 2500)
+        opening = InventoryLedger.objects.get(
+            tank=tank,
+            transaction_type=InventoryLedger.TransactionType.OPENING,
+        )
+        self.assertEqual(opening.quantity_delta, Decimal("2500.000"))
+
+    def test_tank_stock_is_read_only_after_initial_setup(self):
+        tank = Tank.objects.create(
+            station=self.station,
+            fuel_type=self.ms,
+            code="T-01",
+            capacity_litres=10000,
+            current_stock_litres=2500,
+        )
+        self.client.force_login(self.owner)
+        response = self.client.post(
+            reverse("fuel:tank-update", args=[self.station.pk, tank.pk]),
+            {
+                "fuel_type": self.ms.pk,
+                "code": tank.code,
+                "capacity_litres": "10000.000",
+                "current_stock_litres": "0.000",
+                "reorder_level_litres": "1000.000",
+                "is_active": "on",
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("fuel:station-fuel", args=[self.station.pk]),
+        )
+        tank.refresh_from_db()
+        self.assertEqual(tank.current_stock_litres, Decimal("2500.000"))
+
+    def test_owner_records_invoice_delivery_and_stock_ledger_atomically(self):
+        tank = Tank.objects.create(
+            station=self.station,
+            fuel_type=self.ms,
+            code="T-01",
+            capacity_litres=10000,
+            current_stock_litres=2500,
+        )
+        self.client.force_login(self.owner)
+        url = reverse("fuel:fuel-delivery-create", args=[self.station.pk])
+        data = {
+            "tank": tank.pk,
+            "invoice_number": " inv-2026-01 ",
+            "invoice_line_number": "1",
+            "supplier_name": "Reliable Fuel Supply",
+            "supplier_gstin": "27ABCDE1234F1Z5",
+            "supplier_phone": "9876543210",
+            "supplier_address": "Pune depot",
+            "invoice_date": "2026-11-05",
+            "received_at": timezone.localtime().strftime("%Y-%m-%dT%H:%M"),
+            "quantity_litres": "500.000",
+            "cost_per_litre": "90.25",
+        }
+
+        response = self.client.post(url, data)
+
+        self.assertRedirects(
+            response,
+            reverse("fuel:station-inventory", args=[self.station.pk]),
+        )
+        delivery = FuelDelivery.objects.get(station=self.station)
+        tank.refresh_from_db()
+        self.assertEqual(delivery.invoice_number, "INV-2026-01")
+        self.assertEqual(delivery.total_cost, Decimal("45125.00"))
+        self.assertEqual(tank.current_stock_litres, Decimal("3000.000"))
+        ledger = InventoryLedger.objects.get(delivery=delivery)
+        self.assertEqual(ledger.quantity_delta, Decimal("500.000"))
+
+        duplicate = self.client.post(url, data)
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertIn("invoice_number", duplicate.context["form"].errors)
+        self.assertEqual(FuelDelivery.objects.count(), 1)
+
+    def test_delivery_cannot_exceed_tank_capacity(self):
+        tank = Tank.objects.create(
+            station=self.station,
+            fuel_type=self.ms,
+            code="T-01",
+            capacity_litres=10000,
+            current_stock_litres=9500,
+        )
+        self.client.force_login(self.owner)
+        response = self.client.post(
+            reverse("fuel:fuel-delivery-create", args=[self.station.pk]),
+            {
+                "tank": tank.pk,
+                "invoice_number": "INV-OVER",
+                "invoice_line_number": "1",
+                "supplier_name": "Reliable Fuel Supply",
+                "invoice_date": "2026-11-05",
+                "received_at": timezone.localtime().strftime("%Y-%m-%dT%H:%M"),
+                "quantity_litres": "600.000",
+                "cost_per_litre": "90.25",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("quantity_litres", response.context["form"].errors)
+        tank.refresh_from_db()
+        self.assertEqual(tank.current_stock_litres, Decimal("9500.000"))
+        self.assertFalse(FuelDelivery.objects.exists())
+
+    def test_manager_adjustments_require_owner_approval_before_stock_changes(self):
+        tank = Tank.objects.create(
+            station=self.station,
+            fuel_type=self.ms,
+            code="T-01",
+            capacity_litres=10000,
+            current_stock_litres=2500,
+        )
+        manager = User.objects.create_user(
+            username="manager",
+            password="test-password",
+            role=User.Role.MANAGER,
+            is_approved=True,
+            requested_owner=self.owner,
+            approved_by=self.owner,
+        )
+        employee = Employee.objects.create(
+            owner=self.owner,
+            user=manager,
+            employee_code="MGR-01",
+            hire_date=date(2026, 1, 1),
+        )
+        ManagerAssignment.objects.create(employee=employee, station=self.station)
+        adjustment_url = reverse(
+            "fuel:inventory-adjustment-create",
+            args=[self.station.pk],
+        )
+        payload = {
+            "tank": tank.pk,
+            "adjustment_type": FuelInventoryAdjustment.Type.EVAPORATION,
+            "quantity_delta": "-10.000",
+            "reason": "Measured evaporation loss",
+        }
+        self.client.force_login(manager)
+        response = self.client.post(adjustment_url, payload)
+
+        self.assertRedirects(
+            response,
+            reverse("fuel:station-inventory", args=[self.station.pk]),
+        )
+        adjustment = FuelInventoryAdjustment.objects.get()
+        self.assertEqual(adjustment.status, FuelInventoryAdjustment.Status.PENDING)
+        tank.refresh_from_db()
+        self.assertEqual(tank.current_stock_litres, Decimal("2500.000"))
+
+        self.client.force_login(self.owner)
+        decision_url = reverse(
+            "fuel:inventory-adjustment-decide",
+            args=[self.station.pk, adjustment.pk],
+        )
+        approved = self.client.post(
+            decision_url,
+            {"action": "approve", "decision_note": "Verified tank dip."},
+        )
+        self.assertRedirects(
+            approved,
+            reverse("fuel:station-inventory", args=[self.station.pk]),
+        )
+        adjustment.refresh_from_db()
+        tank.refresh_from_db()
+        self.assertEqual(adjustment.status, FuelInventoryAdjustment.Status.APPROVED)
+        self.assertEqual(adjustment.decided_by, self.owner)
+        self.assertEqual(tank.current_stock_litres, Decimal("2490.000"))
+        self.assertEqual(
+            InventoryLedger.objects.get(adjustment=adjustment).quantity_delta,
+            Decimal("-10.000"),
+        )
+
+    def test_manager_inventory_access_is_station_scoped_and_shows_low_stock(self):
+        Tank.objects.create(
+            station=self.station,
+            fuel_type=self.ms,
+            code="T-01",
+            capacity_litres=10000,
+            current_stock_litres=1000,
+            reorder_level_litres=1000,
+        )
+        manager = User.objects.create_user(
+            username="manager",
+            password="test-password",
+            role=User.Role.MANAGER,
+            is_approved=True,
+            requested_owner=self.owner,
+            approved_by=self.owner,
+        )
+        employee = Employee.objects.create(
+            owner=self.owner,
+            user=manager,
+            employee_code="MGR-02",
+            hire_date=date(2026, 1, 1),
+        )
+        ManagerAssignment.objects.create(employee=employee, station=self.station)
+        self.client.force_login(manager)
+
+        response = self.client.get(
+            reverse("fuel:station-inventory", args=[self.station.pk])
+        )
+
+        self.assertContains(response, "Low fuel stock")
+        self.assertContains(response, "T-01")
+        self.assertEqual(len(response.context["low_stock_tanks"]), 1)
+        self.assertNotContains(response, "Record delivery")
 
     def test_tank_code_must_be_unique_within_station(self):
         Tank.objects.create(
@@ -221,8 +442,9 @@ class FuelSetupTests(TestCase):
     def test_price_updates_append_and_history_is_displayed(self):
         self.client.force_login(self.owner)
         price_url = reverse("fuel:fuel-price-create", args=[self.station.pk])
-        first_effective = timezone.localtime().replace(hour=8, minute=0, second=0, microsecond=0)
-        second_effective = first_effective.replace(hour=9)
+        now = timezone.localtime().replace(second=0, microsecond=0)
+        first_effective = now - timedelta(hours=2)
+        second_effective = now - timedelta(hours=1)
 
         first = self.client.post(
             price_url,

@@ -56,7 +56,9 @@ class DutyReport(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         SUBMITTED = "submitted", "Submitted"
+        PENDING_VERIFICATION = "pending_verification", "Pending verification"
         CORRECTION_REQUESTED = "correction_requested", "Correction requested"
+        RESUBMITTED = "resubmitted", "Resubmitted"
         APPROVED = "approved", "Approved"
 
     station = models.ForeignKey(
@@ -157,6 +159,53 @@ class DutyReport(models.Model):
         return f"{self.station.code} · {self.report_date:%d %b %Y} · {self.employee}"
 
 
+class DutyReportReview(models.Model):
+    class Action(models.TextChoices):
+        SUBMITTED = "submitted", "Submitted"
+        VERIFICATION_STARTED = "verification_started", "Verification started"
+        CORRECTION_REQUESTED = "correction_requested", "Correction requested"
+        RESUBMITTED = "resubmitted", "Resubmitted"
+        APPROVED = "approved", "Approved"
+
+    report = models.ForeignKey(
+        DutyReport,
+        on_delete=models.PROTECT,
+        related_name="review_history",
+    )
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="duty_report_reviews",
+    )
+    action = models.CharField(max_length=24, choices=Action.choices)
+    from_status = models.CharField(max_length=24, choices=DutyReport.Status.choices)
+    to_status = models.CharField(max_length=24, choices=DutyReport.Status.choices)
+    notes = models.TextField(blank=True)
+    stock_snapshot = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+        indexes = [
+            models.Index(
+                fields=("report", "created_at"),
+                name="duty_review_report_time_idx",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Duty report review history is immutable.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Duty report review history is immutable.")
+
+    def __str__(self):
+        return f"{self.get_action_display()} — {self.report}"
+
+
 class DutyFuelEntry(models.Model):
     report = models.ForeignKey(
         DutyReport,
@@ -176,6 +225,11 @@ class DutyFuelEntry(models.Model):
     opening_reading = models.DecimalField(max_digits=12, decimal_places=3)
     closing_reading = models.DecimalField(max_digits=12, decimal_places=3)
     testing_litres = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=Decimal("0.000"),
+    )
+    testing_returned_litres = models.DecimalField(
         max_digits=12,
         decimal_places=3,
         default=Decimal("0.000"),
@@ -210,6 +264,8 @@ class DutyFuelEntry(models.Model):
                         testing_litres__lte=F("closing_reading")
                         - F("opening_reading")
                     )
+                    & Q(testing_returned_litres__gte=0)
+                    & Q(testing_returned_litres__lte=F("testing_litres"))
                 ),
                 name="duty_fuel_readings_valid",
             ),
@@ -258,6 +314,7 @@ class DutyFuelEntry(models.Model):
             self.opening_reading is not None
             and self.closing_reading is not None
             and self.testing_litres is not None
+            and self.testing_returned_litres is not None
         ):
             metered_litres = self.closing_reading - self.opening_reading
             actual_sale_litres = metered_litres - self.testing_litres
@@ -265,6 +322,10 @@ class DutyFuelEntry(models.Model):
                 errors["closing_reading"] = "Closing reading cannot be below the opening reading."
             if self.testing_litres > metered_litres:
                 errors["testing_litres"] = "Testing litres cannot exceed metered litres."
+            if self.testing_returned_litres > self.testing_litres:
+                errors["testing_returned_litres"] = (
+                    "Returned testing fuel cannot exceed testing litres."
+                )
             if actual_sale_litres >= 0:
                 self.actual_sale_litres = actual_sale_litres
                 if self.price_per_litre is not None:
@@ -593,20 +654,48 @@ class PaymentCollection(models.Model):
         )
         return fuel_total + lubricant_total
 
+    @property
+    def credit_sales_total(self):
+        detailed_total = self.report.credit_sales.aggregate(
+            total=Sum("sale_amount")
+        )["total"]
+        return self.credit_sales if detailed_total is None else detailed_total
+
+    @property
+    def advances_total(self):
+        advances = self.report.advances.all()
+        if advances.exists():
+            return advances.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+        return self.advances
+
+    @property
+    def otp_total(self):
+        transactions = self.report.otp_transactions.all()
+        if transactions.exists():
+            return (
+                transactions.aggregate(total=Sum("amount"))["total"]
+                or Decimal("0.00")
+            )
+        return self.otp
+
     def reconciliation_summary(self, settings=None):
         if settings is None:
             settings = ReconciliationSettings.objects.filter(
                 station_id=self.report.station_id
             ).first()
         counted_cash = self.cash_total
-        expected = self.duty_sales_total - self.credit_sales
+        expected = self.duty_sales_total - self.credit_sales_total
         actual = (
             counted_cash
             + self.upi
             + self.debit_card
             + self.credit_card
-            + (self.advances if settings is None or settings.include_advances else 0)
-            + (self.otp if settings is None or settings.include_otp else 0)
+            + (
+                self.advances_total
+                if settings is None or settings.include_advances
+                else 0
+            )
+            + (self.otp_total if settings is None or settings.include_otp else 0)
         )
         adjustments = (
             self.report.reconciliation_adjustments.aggregate(total=Sum("amount"))["total"]
@@ -727,6 +816,8 @@ class ReconciliationAdjustment(models.Model):
         errors = {}
         if self.report_id and self.report.status not in (
             DutyReport.Status.SUBMITTED,
+            DutyReport.Status.PENDING_VERIFICATION,
+            DutyReport.Status.RESUBMITTED,
             DutyReport.Status.APPROVED,
         ):
             errors["report"] = "Adjustments require a submitted or approved duty report."

@@ -1,0 +1,39 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}{{ page_title }} | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Station accounting</p>
+        <h1>{{ page_title }}</h1>
+        <p class="dashboard-subtitle">
+            Owners' entries are approved immediately. Manager and DSMS entries are held for Owner approval.
+            Payroll salaries are posted automatically when an Owner marks payroll paid.
+        </p>
+    </div>
+</section>
+
+<section class="panel station-form-panel employee-form-panel">
+    <form method="post" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+        {% endif %}
+        <div class="employee-form-grid">
+            {% for field in form %}
+                <div class="{% if field.name == 'description' %}form-field-wide{% endif %}">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                    {% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+        <div class="form-actions">
+            <a class="btn btn-outline-secondary" href="{% url 'expenses:expense-list' %}">Cancel</a>
+            <button class="btn btn-primary" type="submit">Save expense</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

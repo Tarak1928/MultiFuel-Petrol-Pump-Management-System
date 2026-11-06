@@ -21,13 +21,23 @@
                     <div>
                         <h3>{{ assignment.station.name }}</h3>
                         <p>{{ assignment.station.code }} · {{ assignment.station.city }}, {{ assignment.station.state }}</p>
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'fuel:station-inventory' assignment.station.pk %}">Fuel inventory</a>
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'duties:shift-list' assignment.station.pk %}">Shift schedule</a>
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'credits:customer-list' assignment.station.pk %}">Credit customers</a>
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'credits:overdue-report' assignment.station.pk %}">Overdue credit</a>
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'employees:attendance-station-list' assignment.station.pk %}">Attendance</a>
                     </div>
                 </article>
             {% endfor %}
         </div>
         <div class="d-flex flex-wrap gap-2 mt-3">
             <a class="btn btn-sm btn-outline-secondary" href="{% url 'duties:report-list' %}">Duty reports</a>
+            <a class="btn btn-sm btn-primary" href="{% url 'duties:report-review-queue' %}">Review submissions ({{ pending_report_count }})</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'employees:leave-list' %}">Leave requests</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'employees:payroll-list' %}">My payslips</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'expenses:expense-list' %}">Expenses</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'expenses:accounting-report' %}">Accounting summary</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:analytics' %}">Analytics and exports</a>
         </div>
     </section>
 {% else %}

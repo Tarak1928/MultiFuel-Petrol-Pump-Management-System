@@ -1,0 +1,48 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}OTP transactions | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ report.station.name }} · {{ report.shift.name }}</p>
+        <h1>OTP transactions</h1>
+        <p class="dashboard-subtitle">{{ report.report_date|date:"j F Y" }} · Record verified transaction references, never the OTP code itself.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{% url 'duties:report-detail' report.pk %}">Duty report</a>
+</section>
+
+<section class="panel">
+    {% if transactions %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead><tr><th>Transaction reference</th><th>Provider</th><th>Confirmed</th><th class="text-end">Amount</th></tr></thead>
+                <tbody>
+                    {% for item in transactions %}
+                        <tr><td>{{ item.transaction_reference }}</td><td>{{ item.provider|default:"—" }}</td><td>{{ item.confirmed_at|date:"j M Y, g:i A" }}</td><td class="text-end">₹{{ item.amount|floatformat:2 }}</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot><tr><th colspan="3">Total OTP transactions</th><th class="text-end">₹{{ report.payment_collection.otp_total|floatformat:2 }}</th></tr></tfoot>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-secondary">No OTP transactions have been recorded for this report.</p>
+    {% endif %}
+    {% if can_edit %}
+        <hr>
+        <h2 class="h5">Add a confirmed transaction</h2>
+        <form method="post">
+            {% csrf_token %}
+            {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+            {% for field in form %}
+                <div class="mb-3">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                </div>
+            {% endfor %}
+            <button class="btn btn-primary" type="submit">Record OTP transaction</button>
+        </form>
+    {% endif %}
+</section>
+{% endblock %}

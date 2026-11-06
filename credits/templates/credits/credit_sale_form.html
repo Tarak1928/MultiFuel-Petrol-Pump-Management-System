@@ -1,0 +1,36 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Record credit sale | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ report.station.name }} · {{ report.shift.name }}</p>
+        <h1>{% if sale %}Edit customer credit sale{% else %}Record customer credit sale{% endif %}</h1>
+        <p class="dashboard-subtitle">{{ report.report_date|date:"j F Y" }} · Fuel prices are taken from the report's effective price history.</p>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="alert alert-info" role="note">The sale is included in the report's recorded fuel sales. It reduces collections expected but does not add a second sale.</div>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.submission_token }}
+        {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+        {% for field in form %}
+            {% if field.name != "submission_token" %}
+                <div class="mb-3">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                    {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                </div>
+            {% endif %}
+        {% endfor %}
+        <div class="form-actions">
+            <a class="btn btn-outline-secondary" href="{% url 'duties:report-detail' report.pk %}">Cancel</a>
+            <button class="btn btn-primary" type="submit">{% if sale %}Save changes{% else %}Save credit sale{% endif %}</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

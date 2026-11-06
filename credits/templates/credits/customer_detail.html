@@ -1,0 +1,60 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}{{ customer.name }} statement | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">{{ customer.station.name }} · {{ customer.customer_code }}</p>
+        <h1>{{ customer.name }}</h1>
+        <p class="dashboard-subtitle">{{ customer.vehicle_number|default:"No vehicle recorded" }}{% if customer.vehicle_type %} · {{ customer.vehicle_type }}{% endif %} · {{ customer.phone|default:"No phone" }}</p>
+    </div>
+    {% if user.role == "OWNER" %}<a class="btn btn-outline-primary" href="{% url 'credits:customer-update' customer.pk %}">Edit customer</a>{% endif %}
+</section>
+
+<section class="panel">
+    <div class="station-metrics">
+        <div><strong>₹{{ customer.credit_limit|floatformat:2 }}</strong><span>Credit limit</span></div>
+        <div><strong>₹{{ outstanding_balance|floatformat:2 }}</strong><span>Outstanding balance</span></div>
+        <div><strong>₹{{ available_credit|floatformat:2 }}</strong><span>Available credit</span></div>
+        <div><strong>{{ customer.credit_days }} days</strong><span>Payment terms</span></div>
+    </div>
+    <hr>
+    <div class="panel-heading">
+        <div><p class="eyebrow">Account history</p><h2 class="h4">Credit sales and repayments</h2></div>
+        {% if overdue_sales %}<span class="status-pill status-suspended">{{ overdue_sales|length }} overdue</span>{% endif %}
+    </div>
+    {% if sales %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead><tr><th>Date / shift</th><th>Fuel / vehicle</th><th>Amount</th><th>Due</th><th>Repaid</th><th>Balance</th><th></th></tr></thead>
+                <tbody>
+                    {% for sale in sales %}
+                        <tr>
+                            <td><strong>{{ sale.report.report_date|date:"j M Y" }}</strong><span class="table-secondary">{{ sale.report.shift.name }}</span></td>
+                            <td>{{ sale.fuel_type.name }} · {{ sale.litres|floatformat:3 }} L<span class="table-secondary">{{ sale.vehicle_number|default:"—" }}</span></td>
+                            <td>₹{{ sale.sale_amount|floatformat:2 }}</td>
+                            <td>{{ sale.due_date|date:"j M Y" }}{% if sale.is_overdue %}<span class="table-secondary text-danger">Overdue</span>{% endif %}</td>
+                            <td>
+                                {% for repayment in sale.repayments.all %}
+                                    <span class="table-secondary">₹{{ repayment.amount|floatformat:2 }} · {{ repayment.get_payment_method_display }} · {{ repayment.repaid_at|date:"j M Y" }}</span>
+                                {% empty %}—{% endfor %}
+                            </td>
+                            <td>₹{{ sale.outstanding_amount|floatformat:2 }}</td>
+                            <td class="text-end">
+                                {% if sale.outstanding_amount > 0 %}
+                                    <a class="btn btn-sm btn-outline-primary" href="{% url 'credits:repayment-create' sale.pk %}">Record repayment</a>
+                                {% else %}
+                                    <span class="status-pill status-active">Paid</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-secondary mb-0">No credit sales have been recorded for this customer.</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,189 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Fuel inventory · {{ station.name }} | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Fuel inventory · {{ station.code }}</p>
+        <h1>{{ station.name }}</h1>
+        <p class="dashboard-subtitle">Tank balances, deliveries, approved adjustments, and inventory movements.</p>
+    </div>
+    <div class="fuel-page-actions">
+        {% if can_manage_deliveries %}
+            <a class="btn btn-primary" href="{% url 'fuel:fuel-delivery-create' station.pk %}">Record delivery</a>
+        {% endif %}
+        {% if can_request_adjustment %}
+            <a class="btn btn-outline-primary" href="{% url 'fuel:inventory-adjustment-create' station.pk %}">Record adjustment</a>
+        {% endif %}
+        {% if user.role == "OWNER" %}
+            <a class="btn btn-outline-secondary" href="{% url 'fuel:station-fuel' station.pk %}">Fuel setup</a>
+        {% endif %}
+    </div>
+</section>
+
+{% if low_stock_tanks %}
+    <div class="alert alert-warning" role="alert">
+        <strong>Low fuel stock:</strong>
+        {% for tank in low_stock_tanks %}
+            {{ tank.code }} ({{ tank.current_stock_litres }} L remaining; reorder at {{ tank.reorder_level_litres }} L){% if not forloop.last %}; {% endif %}
+        {% endfor %}
+    </div>
+{% endif %}
+
+<section class="panel fuel-section">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Current balances</p>
+            <h2>Tank stock</h2>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle staff-table">
+            <thead><tr><th>Tank</th><th>Fuel</th><th>Stock (L)</th><th>Capacity (L)</th><th>Reorder point (L)</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for tank in tanks %}
+                    <tr>
+                        <td><strong>{{ tank.code }}</strong></td>
+                        <td>{{ tank.fuel_type.name }} ({{ tank.fuel_type.code }})</td>
+                        <td>{{ tank.current_stock_litres|floatformat:3 }}</td>
+                        <td>{{ tank.capacity_litres|floatformat:3 }}</td>
+                        <td>{{ tank.reorder_level_litres|floatformat:3 }}</td>
+                        <td>
+                            {% if not tank.is_active %}<span class="status-pill status-suspended">Inactive</span>
+                            {% elif tank.is_low_stock %}<span class="status-pill status-review">Low stock</span>
+                            {% else %}<span class="status-pill status-active">In range</span>{% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6" class="text-center text-secondary py-4">No tanks are configured for this station.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+{% if pending_adjustments %}
+    <section class="panel fuel-section">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Owner action required</p>
+                <h2>Pending inventory adjustments</h2>
+            </div>
+            <span class="count-pill">{{ pending_adjustments|length }} pending</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead><tr><th>Tank</th><th>Type</th><th>Quantity (L)</th><th>Requested by</th><th>Reason</th><th>Decision</th></tr></thead>
+                <tbody>
+                    {% for adjustment in pending_adjustments %}
+                        <tr>
+                            <td>{{ adjustment.tank.code }}</td>
+                            <td>{{ adjustment.get_adjustment_type_display }}</td>
+                            <td>{{ adjustment.quantity_delta|floatformat:3 }}</td>
+                            <td>{{ adjustment.requested_by.get_full_name|default:adjustment.requested_by.username }}</td>
+                            <td>{{ adjustment.reason }}</td>
+                            <td>
+                                <form method="post" action="{% url 'fuel:inventory-adjustment-decide' station.pk adjustment.pk %}" class="d-grid gap-2">
+                                    {% csrf_token %}
+                                    <input type="text" name="decision_note" class="form-control form-control-sm" maxlength="500" placeholder="Decision note">
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-success" name="action" value="approve" type="submit">Approve</button>
+                                        <button class="btn btn-sm btn-outline-danger" name="action" value="reject" type="submit">Reject</button>
+                                    </div>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% endif %}
+
+<section class="panel fuel-section">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Supplier purchases</p>
+            <h2>Delivery history</h2>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle staff-table">
+            <thead><tr><th>Received</th><th>Tank / fuel</th><th>Supplier</th><th>Invoice</th><th class="text-end">Quantity (L)</th><th class="text-end">Cost / L</th><th class="text-end">Total cost</th></tr></thead>
+            <tbody>
+                {% for delivery in deliveries %}
+                    <tr>
+                        <td>{{ delivery.received_at|date:"j M Y, g:i A" }}</td>
+                        <td>{{ delivery.tank.code }} / {{ delivery.tank.fuel_type.code }}</td>
+                        <td><strong>{{ delivery.supplier_name }}</strong>{% if delivery.supplier_gstin %}<span class="table-secondary">GSTIN {{ delivery.supplier_gstin }}</span>{% endif %}</td>
+                        <td>{{ delivery.invoice_number }} / {{ delivery.invoice_line_number }}</td>
+                        <td class="text-end">{{ delivery.quantity_litres|floatformat:3 }}</td>
+                        <td class="text-end">₹{{ delivery.cost_per_litre|floatformat:2 }}</td>
+                        <td class="text-end">₹{{ delivery.total_cost|floatformat:2 }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7" class="text-center text-secondary py-4">No fuel deliveries have been recorded.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel fuel-section">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Adjustment audit</p>
+            <h2>Inventory adjustments</h2>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle staff-table">
+            <thead><tr><th>Requested</th><th>Tank</th><th>Type</th><th>Quantity (L)</th><th>Status</th><th>Requested / decided by</th><th>Reason / decision</th></tr></thead>
+            <tbody>
+                {% for adjustment in adjustments %}
+                    <tr>
+                        <td>{{ adjustment.requested_at|date:"j M Y, g:i A" }}</td>
+                        <td>{{ adjustment.tank.code }}</td>
+                        <td>{{ adjustment.get_adjustment_type_display }}</td>
+                        <td>{{ adjustment.quantity_delta|floatformat:3 }}</td>
+                        <td>{{ adjustment.get_status_display }}</td>
+                        <td>{{ adjustment.requested_by.get_full_name|default:adjustment.requested_by.username }}{% if adjustment.decided_by %}<span class="table-secondary">Decision by {{ adjustment.decided_by.get_full_name|default:adjustment.decided_by.username }}</span>{% endif %}</td>
+                        <td>{{ adjustment.reason }}{% if adjustment.decision_note %}<span class="table-secondary">{{ adjustment.decision_note }}</span>{% endif %}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7" class="text-center text-secondary py-4">No adjustments have been recorded.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel fuel-section">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Immutable movements</p>
+            <h2>Inventory transaction history</h2>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle staff-table">
+            <thead><tr><th>Date</th><th>Tank</th><th>Movement</th><th class="text-end">Change (L)</th><th>Reference / notes</th><th>Recorded by</th></tr></thead>
+            <tbody>
+                {% for entry in ledger %}
+                    <tr>
+                        <td>{{ entry.created_at|date:"j M Y, g:i A" }}</td>
+                        <td>{{ entry.tank.code }}</td>
+                        <td>{{ entry.get_transaction_type_display }}</td>
+                        <td class="text-end">{% if entry.quantity_delta > 0 %}+{% endif %}{{ entry.quantity_delta|floatformat:3 }}</td>
+                        <td>{% if entry.report %}<a href="{% url 'duties:report-detail' entry.report.pk %}">Duty report #{{ entry.report.pk }}</a>{% elif entry.delivery %}{{ entry.delivery.invoice_number }}{% elif entry.adjustment %}{{ entry.adjustment.get_adjustment_type_display }}{% else %}{{ entry.notes }}{% endif %}{% if entry.notes %}<span class="table-secondary">{{ entry.notes }}</span>{% endif %}</td>
+                        <td>{{ entry.recorded_by.get_full_name|default:entry.recorded_by.username }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6" class="text-center text-secondary py-4">Inventory movements will appear here.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

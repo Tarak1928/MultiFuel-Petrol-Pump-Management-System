@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
@@ -7,10 +8,28 @@ from django.views.decorators.http import require_POST
 
 from accounts.decorators import role_required
 from accounts.models import User
+from employees.models import Employee
 from stations.models import Station
 
-from .forms import FuelPriceForm, FuelTypeForm, NozzleForm, TankForm, available_fuel_types
-from .models import FuelPrice, FuelType, Nozzle, Tank
+from .forms import (
+    FuelDeliveryForm,
+    FuelInventoryAdjustmentDecisionForm,
+    FuelInventoryAdjustmentForm,
+    FuelPriceForm,
+    FuelTypeForm,
+    NozzleForm,
+    TankForm,
+    available_fuel_types,
+)
+from .models import (
+    FuelDelivery,
+    FuelInventoryAdjustment,
+    FuelPrice,
+    FuelType,
+    InventoryLedger,
+    Nozzle,
+    Tank,
+)
 
 
 def _save_with_unique_guard(form, field_name, conflict_query, message):
@@ -26,6 +45,291 @@ def _save_with_unique_guard(form, field_name, conflict_query, message):
 
 def _owner_stations(user):
     return Station.objects.filter(owner=user)
+
+
+def _accessible_stations(user):
+    if user.role == User.Role.OWNER:
+        return Station.objects.filter(owner=user)
+    if user.role == User.Role.MANAGER:
+        employee = Employee.objects.filter(user=user, is_active=True).first()
+        if not employee:
+            return Station.objects.none()
+        station_ids = employee.manager_assignments.filter(
+            station__is_active=True
+        ).values_list("station_id", flat=True)
+        return Station.objects.filter(pk__in=station_ids, is_active=True)
+    return Station.objects.none()
+
+
+def _station_inventory_context(station, user):
+    tanks = list(
+        Tank.objects.filter(station=station)
+        .select_related("fuel_type")
+        .order_by("code")
+    )
+    return {
+        "station": station,
+        "tanks": tanks,
+        "low_stock_tanks": [
+            tank for tank in tanks if tank.is_active and tank.is_low_stock
+        ],
+        "deliveries": FuelDelivery.objects.filter(station=station)
+        .select_related("tank", "recorded_by")
+        .order_by("-received_at", "-pk")[:50],
+        "adjustments": FuelInventoryAdjustment.objects.filter(station=station)
+        .select_related("tank", "requested_by", "decided_by")
+        .order_by("-requested_at", "-pk")[:50],
+        "pending_adjustments": (
+            FuelInventoryAdjustment.objects.filter(
+                station=station,
+                status=FuelInventoryAdjustment.Status.PENDING,
+            )
+            .select_related("tank", "requested_by")
+            .order_by("requested_at")
+            if user.role == User.Role.OWNER
+            else []
+        ),
+        "ledger": InventoryLedger.objects.filter(tank__station=station)
+        .select_related("tank", "recorded_by", "report", "delivery", "adjustment")
+        .order_by("-created_at", "-pk")[:100],
+        "can_manage_deliveries": (
+            station.is_active and user.role == User.Role.OWNER
+        ),
+        "can_request_adjustment": (
+            station.is_active
+            and user.role in (User.Role.OWNER, User.Role.MANAGER)
+        ),
+    }
+
+
+@role_required(User.Role.OWNER, User.Role.MANAGER)
+def station_inventory(request, station_id):
+    station = get_object_or_404(_accessible_stations(request.user), pk=station_id)
+    return render(
+        request,
+        "fuel/station_inventory.html",
+        _station_inventory_context(station, request.user),
+    )
+
+
+@role_required(User.Role.OWNER)
+def fuel_delivery_create(request, station_id):
+    station = get_object_or_404(
+        _owner_stations(request.user).filter(is_active=True),
+        pk=station_id,
+    )
+    if request.method == "POST":
+        form = FuelDeliveryForm(station, request.POST)
+        if form.is_valid():
+            delivery = None
+            try:
+                with transaction.atomic():
+                    tank = get_object_or_404(
+                        Tank.objects.select_for_update().filter(
+                            station=station,
+                            is_active=True,
+                        ),
+                        pk=form.cleaned_data["tank"].pk,
+                    )
+                    quantity = form.cleaned_data["quantity_litres"]
+                    if tank.current_stock_litres + quantity > tank.capacity_litres:
+                        form.add_error(
+                            "quantity_litres",
+                            "This delivery would exceed the tank's remaining capacity.",
+                        )
+                    else:
+                        delivery = form.save(commit=False)
+                        delivery.station = station
+                        delivery.tank = tank
+                        delivery.recorded_by = request.user
+                        delivery.save()
+                        tank.current_stock_litres += quantity
+                        tank.save(
+                            update_fields=("current_stock_litres", "updated_at")
+                        )
+                        InventoryLedger.objects.create(
+                            tank=tank,
+                            transaction_type=InventoryLedger.TransactionType.DELIVERY,
+                            quantity_delta=quantity,
+                            delivery=delivery,
+                            recorded_by=request.user,
+                            notes=f"Invoice {delivery.invoice_number}",
+                        )
+            except IntegrityError:
+                duplicate = FuelDelivery.objects.filter(
+                    station=station,
+                    invoice_number__iexact=form.cleaned_data["invoice_number"],
+                    invoice_line_number=form.cleaned_data["invoice_line_number"],
+                ).exists()
+                if not duplicate:
+                    raise
+                form.add_error(
+                    "invoice_number",
+                    "This invoice line has already been recorded at the station.",
+                )
+            if delivery:
+                messages.success(
+                    request,
+                    f"Received {delivery.quantity_litres} L for tank {delivery.tank.code}.",
+                )
+                return redirect("fuel:station-inventory", station_id=station.pk)
+    else:
+        form = FuelDeliveryForm(station)
+    return render(
+        request,
+        "fuel/form.html",
+        {
+            "form": form,
+            "page_title": f"Record fuel delivery at {station.name}",
+            "submit_label": "Record delivery",
+            "cancel_url": "fuel:station-inventory",
+            "cancel_kwargs": {"station_id": station.pk},
+            "help_text": (
+                "The delivery is recorded against its supplier invoice and "
+                "increases tank stock atomically."
+            ),
+        },
+    )
+
+
+@role_required(User.Role.OWNER, User.Role.MANAGER)
+def fuel_inventory_adjustment_create(request, station_id):
+    station = get_object_or_404(_accessible_stations(request.user), pk=station_id)
+    if not station.is_active:
+        raise PermissionDenied
+    if request.method == "POST":
+        form = FuelInventoryAdjustmentForm(station, request.POST)
+        if form.is_valid():
+            with transaction.atomic():
+                tank = get_object_or_404(
+                    Tank.objects.select_for_update().filter(
+                        station=station,
+                        is_active=True,
+                    ),
+                    pk=form.cleaned_data["tank"].pk,
+                )
+                delta = form.cleaned_data["quantity_delta"]
+                adjusted_stock = tank.current_stock_litres + delta
+                if adjusted_stock < 0 or adjusted_stock > tank.capacity_litres:
+                    form.add_error(
+                        "quantity_delta",
+                        "The adjustment must keep stock between zero and tank capacity.",
+                    )
+                else:
+                    is_owner = request.user.role == User.Role.OWNER
+                    adjustment = FuelInventoryAdjustment(
+                        station=station,
+                        tank=tank,
+                        adjustment_type=form.cleaned_data["adjustment_type"],
+                        quantity_delta=delta,
+                        reason=form.cleaned_data["reason"].strip(),
+                        status=(
+                            FuelInventoryAdjustment.Status.APPROVED
+                            if is_owner
+                            else FuelInventoryAdjustment.Status.PENDING
+                        ),
+                        requested_by=request.user,
+                        decided_by=request.user if is_owner else None,
+                        decided_at=timezone.now() if is_owner else None,
+                    )
+                    adjustment.save()
+                    if is_owner:
+                        tank.current_stock_litres = adjusted_stock
+                        tank.save(
+                            update_fields=("current_stock_litres", "updated_at")
+                        )
+                        InventoryLedger.objects.create(
+                            tank=tank,
+                            transaction_type=InventoryLedger.TransactionType.ADJUSTMENT,
+                            quantity_delta=delta,
+                            adjustment=adjustment,
+                            recorded_by=request.user,
+                            notes=adjustment.reason,
+                        )
+                    if is_owner:
+                        messages.success(request, "Inventory adjustment was approved and applied.")
+                    else:
+                        messages.success(request, "Inventory adjustment was sent to the Owner.")
+                    return redirect("fuel:station-inventory", station_id=station.pk)
+    else:
+        form = FuelInventoryAdjustmentForm(station)
+    return render(
+        request,
+        "fuel/form.html",
+        {
+            "form": form,
+            "page_title": f"Request inventory adjustment at {station.name}",
+            "submit_label": "Save adjustment",
+            "cancel_url": "fuel:station-inventory",
+            "cancel_kwargs": {"station_id": station.pk},
+            "help_text": (
+                "Leakage and evaporation are negative quantities. Managers submit "
+                "adjustments for Owner approval; Owner adjustments are applied immediately."
+            ),
+        },
+    )
+
+
+@role_required(User.Role.OWNER)
+@require_POST
+@transaction.atomic
+def fuel_inventory_adjustment_decide(request, station_id, adjustment_id):
+    station = get_object_or_404(_owner_stations(request.user), pk=station_id)
+    adjustment = get_object_or_404(
+        FuelInventoryAdjustment.objects.select_for_update().filter(
+            station=station,
+            status=FuelInventoryAdjustment.Status.PENDING,
+        ),
+        pk=adjustment_id,
+    )
+    tank = get_object_or_404(
+        Tank.objects.select_for_update(),
+        pk=adjustment.tank_id,
+        station=station,
+    )
+    form = FuelInventoryAdjustmentDecisionForm(request.POST)
+    if not form.is_valid():
+        messages.error(
+            request,
+            "Adjustment decision was not saved: "
+            + "; ".join(
+                error
+                for errors in form.errors.values()
+                for error in errors
+            ),
+        )
+        return redirect("fuel:station-inventory", station_id=station.pk)
+
+    adjustment.decision_note = form.cleaned_data["decision_note"].strip()
+    adjustment.decided_by = request.user
+    adjustment.decided_at = timezone.now()
+    if form.cleaned_data["action"] == "approve":
+        adjusted_stock = tank.current_stock_litres + adjustment.quantity_delta
+        if adjusted_stock < 0 or adjusted_stock > tank.capacity_litres:
+            messages.error(
+                request,
+                "Adjustment cannot be approved because it would move tank stock "
+                "outside zero and capacity.",
+            )
+            return redirect("fuel:station-inventory", station_id=station.pk)
+        adjustment.status = FuelInventoryAdjustment.Status.APPROVED
+        adjustment.save()
+        tank.current_stock_litres = adjusted_stock
+        tank.save(update_fields=("current_stock_litres", "updated_at"))
+        InventoryLedger.objects.create(
+            tank=tank,
+            transaction_type=InventoryLedger.TransactionType.ADJUSTMENT,
+            quantity_delta=adjustment.quantity_delta,
+            adjustment=adjustment,
+            recorded_by=request.user,
+            notes=adjustment.reason,
+        )
+        messages.success(request, "Adjustment was approved and applied.")
+    else:
+        adjustment.status = FuelInventoryAdjustment.Status.REJECTED
+        adjustment.save()
+        messages.success(request, "Adjustment request was rejected.")
+    return redirect("fuel:station-inventory", station_id=station.pk)
 
 
 @role_required(User.Role.OWNER)
@@ -116,15 +420,24 @@ def tank_create(request, station_id):
     if request.method == "POST":
         form = TankForm(request.user, station, request.POST)
         if form.is_valid():
-            tank = _save_with_unique_guard(
-                form,
-                "code",
-                lambda: Tank.objects.filter(
-                    station=station,
-                    code=form.cleaned_data["code"],
-                ),
-                "A tank with this code already exists at this station.",
-            )
+            with transaction.atomic():
+                tank = _save_with_unique_guard(
+                    form,
+                    "code",
+                    lambda: Tank.objects.filter(
+                        station=station,
+                        code=form.cleaned_data["code"],
+                    ),
+                    "A tank with this code already exists at this station.",
+                )
+                if tank and tank.current_stock_litres:
+                    InventoryLedger.objects.create(
+                        tank=tank,
+                        transaction_type=InventoryLedger.TransactionType.OPENING,
+                        quantity_delta=tank.current_stock_litres,
+                        recorded_by=request.user,
+                        notes="Opening balance from tank setup.",
+                    )
             if tank:
                 messages.success(request, f"Tank {tank.code} was added to {station.name}.")
                 return redirect("fuel:station-fuel", station_id=station.pk)

@@ -1,0 +1,71 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Expenses | MultiFuel{% endblock %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <p class="eyebrow">Station accounting</p>
+        <h1>Expenses</h1>
+        <p class="dashboard-subtitle">Approved expenses flow into the station accounting report. Payroll is posted automatically as a salary expense when paid.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="{% url 'expenses:accounting-report' %}">Accounting report</a>
+        <a class="btn btn-primary" href="{% url 'expenses:expense-create' %}">Record expense</a>
+    </div>
+</section>
+
+<section class="panel">
+    <form method="get" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+        <div>
+            <label class="form-label" for="station">Station</label>
+            <select class="form-select" id="station" name="station">
+                <option value="">All accessible stations</option>
+                {% for station in stations %}
+                    <option value="{{ station.pk }}" {% if selected_station.pk == station.pk %}selected{% endif %}>{{ station.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div><label class="form-label" for="start_date">From</label><input class="form-control" id="start_date" name="start_date" type="date" value="{{ start_date|date:'Y-m-d' }}"></div>
+        <div><label class="form-label" for="end_date">To</label><input class="form-control" id="end_date" name="end_date" type="date" value="{{ end_date|date:'Y-m-d' }}"></div>
+        <button class="btn btn-outline-primary" type="submit">Filter</button>
+    </form>
+
+    {% if expenses %}
+        <div class="table-responsive">
+            <table class="table align-middle staff-table">
+                <thead><tr><th>Date</th><th>Station</th><th>Category</th><th>Payee / reference</th><th>Amount</th><th>Status</th><th>Recorded by</th>{% if can_review %}<th>Decision</th>{% endif %}</tr></thead>
+                <tbody>
+                    {% for expense in expenses %}
+                        <tr>
+                            <td>{{ expense.expense_date|date:"j M Y" }}</td>
+                            <td>{{ expense.station.name }}</td>
+                            <td>{{ expense.get_category_display }}{% if expense.payroll_id %}<span class="table-secondary">Payroll {{ expense.payroll.year }}-{{ expense.payroll.month|stringformat:"02d" }}</span>{% endif %}</td>
+                            <td>{{ expense.payee|default:"—" }}{% if expense.reference %}<span class="table-secondary">{{ expense.reference }}</span>{% endif %}<span class="table-secondary">{{ expense.description }}</span></td>
+                            <td><strong>₹{{ expense.amount|floatformat:2 }}</strong></td>
+                            <td><span class="role-pill">{{ expense.get_status_display }}</span>{% if expense.decision_note %}<span class="table-secondary">{{ expense.decision_note }}</span>{% endif %}</td>
+                            <td>{{ expense.recorded_by.get_full_name|default:expense.recorded_by.username }}</td>
+                            {% if can_review %}
+                                <td>
+                                    {% if expense.status == "pending" %}
+                                        <form method="post" action="{% url 'expenses:expense-decision' expense.pk %}" class="d-grid gap-2">
+                                            {% csrf_token %}
+                                            <input class="form-control form-control-sm" name="decision_note" maxlength="500" placeholder="Required review note" required>
+                                            <div class="d-flex gap-1">
+                                                <button class="btn btn-sm btn-primary" name="action" value="approve" type="submit">Approve</button>
+                                                <button class="btn btn-sm btn-outline-danger" name="action" value="reject" type="submit">Reject</button>
+                                            </div>
+                                        </form>
+                                    {% elif expense.decided_by %}{{ expense.decided_by.get_full_name|default:expense.decided_by.username }}{% endif %}
+                                </td>
+                            {% endif %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state"><h3>No expenses in this period</h3><p>Record a station expense or change the date filters.</p></div>
+    {% endif %}
+</section>
+{% endblock %}

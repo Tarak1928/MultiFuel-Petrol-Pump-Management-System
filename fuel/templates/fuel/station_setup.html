@@ -10,6 +10,7 @@
         <p class="dashboard-subtitle">{{ station.address }}, {{ station.city }}, {{ station.state }}</p>
     </div>
     <div class="fuel-page-actions">
+        <a class="btn btn-primary" href="{% url 'fuel:station-inventory' station.pk %}">Fuel inventory</a>
         <a class="btn btn-outline-secondary" href="{% url 'fuel:fuel-type-list' %}">Fuel types</a>
         <a class="btn btn-outline-secondary" href="{% url 'stations:station-list' %}">All stations</a>
     </div>

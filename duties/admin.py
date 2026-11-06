@@ -4,6 +4,7 @@ from .models import (
     DutyFuelEntry,
     DutyLubricantEntry,
     DutyReport,
+    DutyReportReview,
     Lubricant,
     CashDenomination,
     PaymentCollection,
@@ -51,6 +52,45 @@ class DutyReportAdmin(admin.ModelAdmin):
         "submitted_at",
         "created_at",
         "updated_at",
+    )
+
+    def has_module_permission(self, request):
+        return request.user.is_superuser
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(DutyReportReview)
+class DutyReportReviewAdmin(admin.ModelAdmin):
+    list_display = (
+        "report",
+        "action",
+        "actor",
+        "from_status",
+        "to_status",
+        "created_at",
+    )
+    list_filter = ("action", "report__station", "created_at")
+    search_fields = ("report__station__code", "actor__username", "notes")
+    readonly_fields = (
+        "report",
+        "actor",
+        "action",
+        "from_status",
+        "to_status",
+        "notes",
+        "stock_snapshot",
+        "created_at",
     )
 
     def has_module_permission(self, request):

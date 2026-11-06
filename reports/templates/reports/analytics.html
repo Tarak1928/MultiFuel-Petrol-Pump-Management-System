@@ -1,0 +1,69 @@
+{% extends "accounts/dashboard_base.html" %}
+
+{% block title %}Analytics and exports | MultiFuel{% endblock %}
+{% block dashboard_eyebrow %}Reports{% endblock %}
+{% block dashboard_title %}Analytics and exports{% endblock %}
+{% block dashboard_subtitle %}Review station performance and download reports for a selected period.{% endblock %}
+
+{% block dashboard_content %}
+<section class="panel mb-4">
+    <form method="get" class="row g-3 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label" for="report">Report</label>
+            <select class="form-select" id="report" name="report">
+                {% for value, label in reports.items %}
+                    <option value="{{ value }}" {% if value == report_kind %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label" for="station">Station</label>
+            <select class="form-select" id="station" name="station">
+                <option value="">All accessible stations</option>
+                {% for station in stations %}
+                    <option value="{{ station.pk }}" {% if selected_station.pk == station.pk %}selected{% endif %}>{{ station.name }} ({{ station.code }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="start_date">From</label>
+            <input class="form-control" type="date" id="start_date" name="start_date" value="{{ start_date|date:'Y-m-d' }}" required>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="end_date">To</label>
+            <input class="form-control" type="date" id="end_date" name="end_date" value="{{ end_date|date:'Y-m-d' }}" required>
+        </div>
+        <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">View report</button></div>
+    </form>
+</section>
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">{{ start_date|date:"j M Y" }} – {{ end_date|date:"j M Y" }}</p>
+            <h2>{{ report_title }}</h2>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            {% for format in export_formats %}
+                <a class="btn btn-sm btn-outline-primary" href="?report={{ report_kind }}{% if selected_station %}&station={{ selected_station.pk }}{% endif %}&start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&format={{ format }}">Download {{ format|upper }}</a>
+            {% endfor %}
+        </div>
+    </div>
+    {% if rows %}
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead><tr>{% for column in columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>{% for value in row.values %}<td>{{ value|default:"—" }}</td>{% endfor %}</tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state"><h3>No records for this period</h3><p>Try a different station or date range.</p></div>
+    {% endif %}
+    {% if report_kind == "sales" %}
+        <p class="text-secondary small mb-0">Sales less expenses is not a full profit statement; it excludes fuel purchase costs, taxes, and other liabilities.</p>
+    {% endif %}
+</section>
+{% endblock %}
