@@ -23,7 +23,7 @@
                             <h3 class="h6 mb-1">{{ notification.title }}</h3>
                             <p class="mb-1">{{ notification.message }}</p>
                             <small class="text-secondary">{{ notification.created_at|date:"j M Y, g:i a" }}
-                                {% if notification.email_status == "failed" %} · Email delivery failed{% elif notification.email_status == "sent" %} · Email sent{% elif notification.email_status == "pending" %} · Email queued{% endif %}
+                                {% if notification.email_status == "failed" %} · Email delivery failed{% elif notification.email_status == "sent" %} · Email sent{% elif notification.email_status == "pending" %} · Email queued{% elif notification.email_status == "console_only" %} · Email written to server log only{% endif %}
                             </small>
                         </div>
                         {% if notification.url %}

@@ -159,26 +159,43 @@ python manage.py makemigrations --check --dry-run
 pytest
 ```
 
-## Deploying to Render
+## Free demo deployment on Render
 
-The root `render.yaml` Blueprint defines a Django web service and a fresh
-managed PostgreSQL database. The Blueprint uses paid Render plans; review
-current pricing in Render before applying it. Connect this repository from the
-Render Dashboard's **Blueprints** page and apply the Blueprint to create the
-services. Do not copy local SQLite data into the production database.
+The root `render.yaml` Blueprint defines a free Render web service and uses an
+external PostgreSQL connection. Create a free PostgreSQL database with a
+provider such as Neon, then configure `DATABASE_URL` in Render with that
+provider's pooled PostgreSQL connection string. Do not use Render's free
+PostgreSQL database for persistent project data: Render deletes it after its
+30-day expiry window.
+
+Connect this repository from the Render Dashboard's **Blueprints** page and
+apply the Blueprint. Set `DATABASE_URL` and the one-time initial Owner values
+(`INITIAL_OWNER_USERNAME`, `INITIAL_OWNER_EMAIL`, `INITIAL_OWNER_PASSWORD`)
+directly in Render; never put the database URL or Owner password in source
+control. The generated owner command creates the first approved Owner on the
+first deployment and will not replace an existing superuser. Remove the
+`INITIAL_OWNER_*` values from Render after the first successful deployment.
 
 The Blueprint generates `DJANGO_SECRET_KEY`, sets `DJANGO_DEBUG=0`, runs
-database migrations before deployment, collects static files, and checks
-`/health/`. Render supplies the public hostname, which Django adds to
-`ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`. Configure the `EMAIL_*` variables in
-the Render service's environment settings to enable real email delivery.
-`SITE_URL` is derived from the Render hostname unless explicitly overridden.
+migrations and static collection during build, and checks `/health/`. Render
+supplies the public hostname, which Django adds to `ALLOWED_HOSTS` and
+`CSRF_TRUSTED_ORIGINS`. `SITE_URL` is derived from the Render hostname unless explicitly overridden.
 
-After the first successful deployment, open the service's Shell and run
-`python manage.py createsuperuser` to create the first production Owner.
-Keep generated credentials in a password manager and never commit them.
+**Free-tier limitations:** Render free web services sleep after 15 minutes
+without traffic, can take about a minute to wake, and have an ephemeral
+filesystem. Never use local SQLite or local uploads for persistent production
+data on this service. An external free database has its own quotas, policies,
+availability limits, and external-traffic restrictions; configure independent
+backups before storing irreplaceable business records. Render free services
+cannot send SMTP traffic on common email ports, so this Blueprint uses the
+console email backend; password-reset and notification emails are not
+delivered to users. The notification inbox labels these as console-only.
+Free hosting is suitable for a demo, not dependable business operations. Check
+current provider terms and quotas before deployment.
+
 For a custom domain, configure it in Render and set `SITE_URL` to the HTTPS
-domain. Run Django's deployment checks before switching real users to the app.
+domain. Move to paid hosting and configure database backups and an email
+delivery provider before relying on the service for live business records.
 See [MultiFuel_Project_Summary.pdf](./MultiFuel_Project_Summary.pdf) for a
 quantified project and deployment overview.
 

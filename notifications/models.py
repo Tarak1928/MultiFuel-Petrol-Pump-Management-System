@@ -8,6 +8,7 @@ class Notification(models.Model):
         NO_ADDRESS = "no_address", "No email address"
         PENDING = "pending", "Pending"
         SENT = "sent", "Sent"
+        CONSOLE_ONLY = "console_only", "Console only"
         FAILED = "failed", "Failed"
 
     recipient = models.ForeignKey(

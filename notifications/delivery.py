@@ -32,7 +32,12 @@ def _send_notification_email(notification_id):
         )
     else:
         Notification.objects.filter(pk=notification_id).update(
-            email_status=Notification.EmailStatus.SENT
+            email_status=(
+                Notification.EmailStatus.CONSOLE_ONLY
+                if settings.EMAIL_BACKEND
+                == "django.core.mail.backends.console.EmailBackend"
+                else Notification.EmailStatus.SENT
+            )
         )
 
 

@@ -50,6 +50,23 @@ class NotificationInboxTests(TestCase):
         notification = Notification.objects.get(recipient=self.owner)
         self.assertEqual(notification.email_status, Notification.EmailStatus.SENT)
 
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend")
+    def test_console_email_is_not_marked_as_delivered(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            User.objects.create_user(
+                username="console-request",
+                password="Secure-manager-password-1!",
+                email="manager@example.com",
+                role=User.Role.MANAGER,
+                requested_owner=self.owner,
+            )
+
+        notification = Notification.objects.get(recipient=self.owner)
+        self.assertEqual(
+            notification.email_status,
+            Notification.EmailStatus.CONSOLE_ONLY,
+        )
+
     def test_inbox_and_read_action_are_scoped_to_logged_in_user(self):
         notification = Notification.objects.create(
             recipient=self.owner,
